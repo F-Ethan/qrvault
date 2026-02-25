@@ -1,0 +1,54 @@
+name: qrvault
+description: Create, store and manage your QR codes.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Backend
+  supabase_flutter: ^2.9.1
+
+  # QR Code generation
+  qr_flutter: ^4.1.0
+
+  # QR Code scanning
+  mobile_scanner: ^7.2.0
+
+  # Location
+  geolocator: ^14.0.2
+  geocoding: ^4.0.0
+
+  # State management
+  flutter_riverpod: ^3.2.1
+
+  # Navigation
+  go_router: ^17.1.0
+
+  # UI
+  cupertino_icons: ^1.0.8
+
+  # Utilities
+  uuid: ^4.4.0
+  intl: ^0.20.0
+  url_launcher: ^6.3.0
+  shared_preferences: ^2.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter:
+  uses-material-design: true
+
+flutter_launcher_icons:
+  android: false
+  ios: true
+  image_path: "assets/icons/app_icon.png"
+  ios_content_mode: scaleAspectFill
