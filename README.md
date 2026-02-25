@@ -37,7 +37,7 @@ A Flutter app for scanning, creating, and managing QR codes. All codes are store
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/your-username/qrvault.git
+git clone https://github.com/F-Ethan/qrvault.git
 cd qrvault
 ```
 
