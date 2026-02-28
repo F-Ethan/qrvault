@@ -4,8 +4,7 @@
     {
       "name": "qrvault (dev)",
       "request": "launch",
-      "type": "dart",
-      "args": ["--dart-define-from-file=dart_defines/dev.json"]
+      "type": "dart"
     }
   ]
 }

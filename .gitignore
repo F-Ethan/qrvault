@@ -18,8 +18,7 @@ migrate_working_dir/
 *.iws
 .idea/
 
-# VS Code — launch.json contains dart-define secrets so it is gitignored.
-# Use .vscode/launch.json.template as the committed reference instead.
+# VS Code — personal/machine-specific config
 .vscode/launch.json
 
 # Flutter/Dart/Pub related
@@ -44,8 +43,8 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Dart-define secret files — keep *.json out of git; only commit *.template
-dart_defines/*.json
+# Secrets — real file is gitignored; commit only the .template version
+lib/core/constants/app_secrets.dart
 
 # Claude AI assistant memory — local only
 .claude/

@@ -173,22 +173,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final uri = Uri.tryParse(url);
     if (uri == null) return;
 
-    // 1. Try universal link — opens in a native app if one is registered.
-    //    On iOS this is UIApplication.open(url, options: [.universalLinksOnly: true]).
-    //    Returns false (or throws) when no app handles it.
-    try {
-      final opened = await launchUrl(
-        uri,
-        mode: LaunchMode.externalNonBrowserApplication,
-      );
-      if (opened) return;
-    } catch (_) {
-      // No universal link handler installed — fall through to browser.
-    }
-
-    // 2. Fall back to the system browser.
     if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      await launchUrl(uri, mode: LaunchMode.platformDefault);
     } else {
       _copy(url, label: 'URL copied (could not open browser)');
     }
