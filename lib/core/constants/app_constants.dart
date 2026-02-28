@@ -8,7 +8,8 @@ class AppConstants {
   static const String supabaseAnonKey = AppSecrets.supabaseAnonKey;
 
   // Location — how close you need to be for a code to show in "Near You"
-  static const double nearbyRadiusKm = 0.5;
+  // 8 km ≈ 5 miles
+  static const double nearbyRadiusKm = 8.0;
 
   // QR Code defaults
   static const String defaultForegroundColor = '#000000';

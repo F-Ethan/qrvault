@@ -11,6 +11,7 @@ class QrCodeModel {
   final QrCodeSource source;
   final String foregroundColor;
   final String backgroundColor;
+  final bool isPinned;
   final int scanCount;
   final DateTime? firstScannedAt;
   final DateTime? lastScannedAt;
@@ -32,6 +33,7 @@ class QrCodeModel {
     required this.source,
     this.foregroundColor = '#000000',
     this.backgroundColor = '#FFFFFF',
+    this.isPinned = false,
     this.scanCount = 0,
     this.firstScannedAt,
     this.lastScannedAt,
@@ -63,6 +65,7 @@ class QrCodeModel {
             json['foreground_color'] as String? ?? '#000000',
         backgroundColor:
             json['background_color'] as String? ?? '#FFFFFF',
+        isPinned: json['is_pinned'] as bool? ?? false,
         scanCount: json['scan_count'] as int? ?? 0,
         firstScannedAt: json['first_scanned_at'] != null
             ? DateTime.parse(json['first_scanned_at'] as String)
@@ -90,6 +93,7 @@ class QrCodeModel {
         'source': source.name,
         'foreground_color': foregroundColor,
         'background_color': backgroundColor,
+        'is_pinned': isPinned,
         'scan_count': scanCount,
         'first_scanned_at': firstScannedAt?.toIso8601String(),
         'last_scanned_at': lastScannedAt?.toIso8601String(),
@@ -113,6 +117,7 @@ class QrCodeModel {
     QrCodeSource? source,
     String? foregroundColor,
     String? backgroundColor,
+    bool? isPinned,
     int? scanCount,
     DateTime? firstScannedAt,
     DateTime? lastScannedAt,
@@ -134,6 +139,7 @@ class QrCodeModel {
         source: source ?? this.source,
         foregroundColor: foregroundColor ?? this.foregroundColor,
         backgroundColor: backgroundColor ?? this.backgroundColor,
+        isPinned: isPinned ?? this.isPinned,
         scanCount: scanCount ?? this.scanCount,
         firstScannedAt: firstScannedAt ?? this.firstScannedAt,
         lastScannedAt: lastScannedAt ?? this.lastScannedAt,

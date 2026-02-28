@@ -131,6 +131,22 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
   }
 
+  Future<void> _togglePin(QrCodeModel code) async {
+    await ref.read(qrCodesProvider.notifier).updateCode(
+          code.copyWith(isPinned: !code.isPinned),
+        );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            code.isPinned ? 'Removed from My Cards' : 'Added to My Cards',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   Future<void> _deleteCode(QrCodeModel code) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -239,6 +255,18 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                           ),
                   ]
                 : [
+                    IconButton(
+                      icon: Icon(
+                        code.isPinned
+                            ? Icons.bookmark_rounded
+                            : Icons.bookmark_outline_rounded,
+                        color: code.isPinned ? AppTheme.primary : null,
+                      ),
+                      onPressed: () => _togglePin(code),
+                      tooltip: code.isPinned
+                          ? 'Remove from My Cards'
+                          : 'Add to My Cards',
+                    ),
                     IconButton(
                       icon: const Icon(Icons.edit_outlined),
                       onPressed: () => setState(() => _isEditing = true),

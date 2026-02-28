@@ -14,6 +14,7 @@ import '../../screens/create/create_screen.dart';
 import '../../screens/scan/scan_screen.dart';
 import '../../screens/settings/settings_screen.dart';
 import '../../screens/detail/detail_screen.dart';
+import '../../screens/mycards/my_cards_screen.dart';
 import '../../screens/onboarding/onboarding_screen.dart';
 import '../../providers/onboarding_provider.dart';
 
@@ -118,6 +119,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             builder: (context, state) => const LibraryScreen(),
           ),
           GoRoute(
+            path: '/mycards',
+            builder: (context, state) => const MyCardsScreen(),
+          ),
+          GoRoute(
             path: '/settings',
             builder: (context, state) => const SettingsScreen(),
           ),
@@ -141,7 +146,8 @@ class _MainShell extends StatelessWidget {
     final currentIndex = switch (location) {
       '/' => 0,
       '/library' => 1,
-      '/settings' => 2,
+      '/mycards' => 2,
+      '/settings' => 3,
       _ => 0,
     };
 
@@ -187,20 +193,25 @@ class _MainShell extends StatelessWidget {
             // Space for the FAB notch
             const SizedBox(width: 80),
 
-            // Right side: Settings
+            // Right side: My Cards + Settings
             Expanded(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   _NavItem(
+                    icon: Icons.bookmark_outline_rounded,
+                    activeIcon: Icons.bookmark_rounded,
+                    label: 'My Cards',
+                    isActive: currentIndex == 2,
+                    onTap: () => context.go('/mycards'),
+                  ),
+                  _NavItem(
                     icon: Icons.settings_outlined,
                     activeIcon: Icons.settings_rounded,
                     label: 'Settings',
-                    isActive: currentIndex == 2,
+                    isActive: currentIndex == 3,
                     onTap: () => context.go('/settings'),
                   ),
-                  // Placeholder to keep Settings centred in its half
-                  const SizedBox(width: 48),
                 ],
               ),
             ),

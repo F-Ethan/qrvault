@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -5,10 +7,22 @@ import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/models/qr_code_model.dart';
 import '../../providers/qr_code_providers.dart';
+import '../../providers/settings_providers.dart';
+
+// Haversine distance in km using dart:math for accuracy.
+double _haversineKm(double lat1, double lon1, double lat2, double lon2) {
+  const r = 6371.0;
+  final dLat = (lat2 - lat1) * math.pi / 180;
+  final dLon = (lon2 - lon1) * math.pi / 180;
+  final a = math.pow(math.sin(dLat / 2), 2) +
+      math.cos(lat1 * math.pi / 180) *
+          math.cos(lat2 * math.pi / 180) *
+          math.pow(math.sin(dLon / 2), 2);
+  return r * 2 * math.asin(math.sqrt(a));
+}
 
 // ---------------------------------------------------------------------------
 // Home Screen
@@ -21,20 +35,24 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  List<QrCodeModel>? _nearbyCodes;
+  // We only store the user's position — nearby filtering happens in build()
+  // so it always has access to the fully-loaded qrCodesProvider data.
+  Position? _userPosition;
   bool _locationLoading = true;
   bool _locationDenied = false;
+  bool _locationError = false;
 
   @override
   void initState() {
     super.initState();
-    _fetchNearby();
+    _fetchPosition();
   }
 
-  Future<void> _fetchNearby() async {
+  Future<void> _fetchPosition() async {
     setState(() {
       _locationLoading = true;
       _locationDenied = false;
+      _locationError = false;
     });
 
     try {
@@ -54,31 +72,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition(
+      // Use last known position first — instant, no timeout risk.
+      // Fall back to a live fix only when no cached position exists.
+      Position? position = await Geolocator.getLastKnownPosition();
+      position ??= await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.medium,
-          timeLimit: Duration(seconds: 10),
+          timeLimit: Duration(seconds: 20),
         ),
-      );
-
-      final repo = ref.read(qrCodeRepositoryProvider);
-      final nearby = await repo.getNearby(
-        position.latitude,
-        position.longitude,
-        AppConstants.nearbyRadiusKm,
       );
 
       if (mounted) {
         setState(() {
-          _nearbyCodes = nearby;
+          _userPosition = position;
           _locationLoading = false;
         });
       }
     } catch (_) {
       if (mounted) {
         setState(() {
-          _nearbyCodes = [];
+          _userPosition = null;
           _locationLoading = false;
+          _locationError = true;
         });
       }
     }
@@ -107,6 +122,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final codesAsync = ref.watch(qrCodesProvider);
+    // Watch radius so Near You updates immediately when slider changes.
+    final radiusKm = ref.watch(nearbyRadiusProvider) * 1.60934;
+
+    // Compute nearby codes reactively — codes are guaranteed to be loaded here.
+    List<QrCodeModel>? nearbyCodes;
+    if (!_locationLoading && !_locationDenied && _userPosition != null) {
+      final allCodes = codesAsync.asData?.value ?? [];
+      nearbyCodes = allCodes.where((qr) {
+        final lat = qr.lastScannedLat ?? qr.firstScannedLat;
+        final lng = qr.lastScannedLng ?? qr.firstScannedLng;
+        if (lat == null || lng == null) return false;
+        return _haversineKm(
+              _userPosition!.latitude,
+              _userPosition!.longitude,
+              lat,
+              lng,
+            ) <=
+            radiusKm;
+      }).toList();
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -116,7 +151,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         onRefresh: () async {
           await Future.wait([
             ref.read(qrCodesProvider.notifier).refresh(),
-            _fetchNearby(),
+            _fetchPosition(),
           ]);
         },
         child: CustomScrollView(
@@ -136,9 +171,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             // ── Near You ────────────────────────────────────────────────────
             SliverToBoxAdapter(
               child: _NearYouSection(
-                codes: _nearbyCodes,
+                codes: nearbyCodes,
                 loading: _locationLoading,
                 denied: _locationDenied,
+                locationError: _locationError,
+                onRetry: _fetchPosition,
               ),
             ),
 
@@ -186,11 +223,15 @@ class _NearYouSection extends StatelessWidget {
   final List<QrCodeModel>? codes;
   final bool loading;
   final bool denied;
+  final bool locationError;
+  final VoidCallback? onRetry;
 
   const _NearYouSection({
     required this.codes,
     required this.loading,
     required this.denied,
+    this.locationError = false,
+    this.onRetry,
   });
 
   @override
@@ -226,6 +267,14 @@ class _NearYouSection extends StatelessWidget {
           _NearYouPlaceholder(
             icon: Icons.location_off_outlined,
             message: 'Enable location to see nearby codes',
+          )
+        else if (locationError)
+          GestureDetector(
+            onTap: onRetry,
+            child: _NearYouPlaceholder(
+              icon: Icons.refresh,
+              message: 'Could not get location — tap to retry',
+            ),
           )
         else if (codes == null || codes!.isEmpty)
           _NearYouPlaceholder(

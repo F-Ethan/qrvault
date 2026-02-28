@@ -289,6 +289,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           const SizedBox(height: 24),
 
+          // ── Location section ──────────────────────────────────────────────
+          _SectionHeader('Location'),
+          _SettingsCard(
+            children: [
+              _NearbyRadiusRow(),
+            ],
+          ),
+
+          const SizedBox(height: 24),
+
           // ── Appearance section ────────────────────────────────────────────
           _SectionHeader('Appearance'),
           _SettingsCard(
@@ -656,6 +666,69 @@ class _ActionRow extends StatelessWidget {
                 size: 20, color: AppTheme.textSecondary),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Nearby radius slider
+// ---------------------------------------------------------------------------
+class _NearbyRadiusRow extends ConsumerWidget {
+  const _NearbyRadiusRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final miles = ref.watch(nearbyRadiusProvider);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.location_on_outlined,
+                  size: 20, color: AppTheme.textSecondary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text('"Near You" radius',
+                    style: Theme.of(context).textTheme.bodyLarge),
+              ),
+              Text(
+                '${miles.toStringAsFixed(0)} mi',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.primary,
+                ),
+              ),
+            ],
+          ),
+          Slider(
+            value: miles,
+            min: 1,
+            max: 25,
+            divisions: 24,
+            label: '${miles.toStringAsFixed(0)} miles',
+            onChanged: (v) =>
+                ref.read(nearbyRadiusProvider.notifier).setRadius(v),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('1 mi',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(color: AppTheme.textSecondary)),
+              Text('25 mi',
+                  style: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.copyWith(color: AppTheme.textSecondary)),
+            ],
+          ),
+        ],
       ),
     );
   }

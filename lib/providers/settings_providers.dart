@@ -31,3 +31,33 @@ class ThemeModeNotifier extends Notifier<ThemeMode> {
     await prefs.setString(_kThemeModeKey, mode.name);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Nearby radius — stored as miles (1–25), default 1
+// ---------------------------------------------------------------------------
+const _kNearbyRadiusMilesKey = 'nearby_radius_miles';
+const double nearbyRadiusDefault = 1.0;
+
+final nearbyRadiusProvider = NotifierProvider<NearbyRadiusNotifier, double>(
+  NearbyRadiusNotifier.new,
+);
+
+class NearbyRadiusNotifier extends Notifier<double> {
+  @override
+  double build() {
+    _load();
+    return nearbyRadiusDefault;
+  }
+
+  Future<void> _load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getDouble(_kNearbyRadiusMilesKey);
+    if (stored != null) state = stored;
+  }
+
+  Future<void> setRadius(double miles) async {
+    state = miles;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_kNearbyRadiusMilesKey, miles);
+  }
+}

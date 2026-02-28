@@ -37,6 +37,89 @@ IconData _typeIcon(QrCodeType type) => switch (type) {
     };
 
 // ---------------------------------------------------------------------------
+// Social & payment templates
+// ---------------------------------------------------------------------------
+class _SocialTemplate {
+  final String label;
+  final String hint;     // shown in the text field
+  final String prefix;   // prepended to the user's handle to form a URL
+  final IconData icon;
+  final Color color;
+
+  const _SocialTemplate({
+    required this.label,
+    required this.hint,
+    required this.prefix,
+    required this.icon,
+    required this.color,
+  });
+
+  String buildUrl(String handle) {
+    final clean = handle.replaceFirst(RegExp(r'^@'), '');
+    return '$prefix$clean';
+  }
+}
+
+const _socialTemplates = [
+  _SocialTemplate(
+    label: 'Instagram',
+    hint: '@yourhandle',
+    prefix: 'https://instagram.com/',
+    icon: Icons.camera_alt_outlined,
+    color: Color(0xFFE1306C),
+  ),
+  _SocialTemplate(
+    label: 'X / Twitter',
+    hint: '@yourhandle',
+    prefix: 'https://x.com/',
+    icon: Icons.alternate_email_rounded,
+    color: Color(0xFF000000),
+  ),
+  _SocialTemplate(
+    label: 'TikTok',
+    hint: '@yourhandle',
+    prefix: 'https://tiktok.com/@',
+    icon: Icons.music_note_rounded,
+    color: Color(0xFF010101),
+  ),
+  _SocialTemplate(
+    label: 'LinkedIn',
+    hint: 'your-name',
+    prefix: 'https://linkedin.com/in/',
+    icon: Icons.work_outline_rounded,
+    color: Color(0xFF0A66C2),
+  ),
+  _SocialTemplate(
+    label: 'Venmo',
+    hint: '@yourhandle',
+    prefix: 'https://venmo.com/',
+    icon: Icons.attach_money_rounded,
+    color: Color(0xFF3D95CE),
+  ),
+  _SocialTemplate(
+    label: 'PayPal',
+    hint: 'your-name',
+    prefix: 'https://paypal.me/',
+    icon: Icons.payment_rounded,
+    color: Color(0xFF003087),
+  ),
+  _SocialTemplate(
+    label: 'YouTube',
+    hint: '@yourchannel',
+    prefix: 'https://youtube.com/@',
+    icon: Icons.play_circle_outline_rounded,
+    color: Color(0xFFFF0000),
+  ),
+  _SocialTemplate(
+    label: 'Snapchat',
+    hint: 'yourhandle',
+    prefix: 'https://snapchat.com/add/',
+    icon: Icons.wb_sunny_outlined,
+    color: Color(0xFFFFFC00),
+  ),
+];
+
+// ---------------------------------------------------------------------------
 // Colour presets
 // ---------------------------------------------------------------------------
 const _fgPresets = [
@@ -72,10 +155,13 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
   int _step = 0;
   QrCodeType _type = QrCodeType.url;
 
+  // Social template (set when user picks a template; null for standard types)
+  _SocialTemplate? _socialTemplate;
+
   // Common
   final _labelCtrl = TextEditingController();
 
-  // URL
+  // URL / social handle
   final _urlCtrl = TextEditingController();
 
   // Text
@@ -123,6 +209,7 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
       QrCodeType.url => () {
           final raw = _urlCtrl.text.trim();
           if (raw.isEmpty) return '';
+          if (_socialTemplate != null) return _socialTemplate!.buildUrl(raw);
           return raw.startsWith('http') ? raw : 'https://$raw';
         }(),
       QrCodeType.text => _textCtrl.text.trim(),
@@ -149,6 +236,10 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
 
   String _autoLabel() => switch (_type) {
         QrCodeType.url => () {
+            if (_socialTemplate != null) {
+              final handle = _urlCtrl.text.trim();
+              return '${_socialTemplate!.label} · ${handle.startsWith('@') ? handle : '@$handle'}';
+            }
             try {
               return Uri.parse(_urlCtrl.text.trim())
                   .host
@@ -237,12 +328,27 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
       ),
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 220),
-        child: _step == 0 ? _TypePicker(key: const ValueKey(0), onSelect: (t) {
-          setState(() {
-            _type = t;
-            _step = 1;
-          });
-        }) : _buildConfigureStep(),
+        child: _step == 0
+            ? _TypePicker(
+                key: const ValueKey(0),
+                onSelect: (t) {
+                  setState(() {
+                    _type = t;
+                    _socialTemplate = null;
+                    _urlCtrl.clear();
+                    _step = 1;
+                  });
+                },
+                onSelectSocial: (template) {
+                  setState(() {
+                    _type = QrCodeType.url;
+                    _socialTemplate = template;
+                    _urlCtrl.clear();
+                    _step = 1;
+                  });
+                },
+              )
+            : _buildConfigureStep(),
       ),
     );
   }
@@ -398,19 +504,65 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
     void rebuild(_) => setState(() {});
 
     return switch (_type) {
-      // ── URL ────────────────────────────────────────────────────────────────
+      // ── URL / Social template ───────────────────────────────────────────────
       QrCodeType.url => [
-          TextField(
-            controller: _urlCtrl,
-            onChanged: rebuild,
-            keyboardType: TextInputType.url,
-            autocorrect: false,
-            decoration: const InputDecoration(
-              labelText: 'URL *',
-              hintText: 'https://example.com',
-              prefixIcon: Icon(Icons.link_rounded),
+          if (_socialTemplate != null) ...[
+            // Show which template is active and let the user swap it
+            GestureDetector(
+              onTap: () => setState(() {
+                _socialTemplate = null;
+                _urlCtrl.clear();
+              }),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: _socialTemplate!.color.withValues(alpha: 0.08),
+                  border: Border.all(
+                      color: _socialTemplate!.color.withValues(alpha: 0.3)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Icon(_socialTemplate!.icon,
+                        color: _socialTemplate!.color, size: 20),
+                    const SizedBox(width: 10),
+                    Text(
+                      _socialTemplate!.label,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: _socialTemplate!.color,
+                      ),
+                    ),
+                    const Spacer(),
+                    Icon(Icons.close_rounded,
+                        size: 16, color: _socialTemplate!.color),
+                  ],
+                ),
+              ),
             ),
-          ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _urlCtrl,
+              onChanged: rebuild,
+              autocorrect: false,
+              decoration: InputDecoration(
+                labelText: '${_socialTemplate!.label} handle *',
+                hintText: _socialTemplate!.hint,
+                prefixIcon: const Icon(Icons.alternate_email_rounded),
+              ),
+            ),
+          ] else
+            TextField(
+              controller: _urlCtrl,
+              onChanged: rebuild,
+              keyboardType: TextInputType.url,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: 'URL *',
+                hintText: 'https://example.com',
+                prefixIcon: Icon(Icons.link_rounded),
+              ),
+            ),
         ],
 
       // ── Text ───────────────────────────────────────────────────────────────
@@ -550,8 +702,13 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
 // ---------------------------------------------------------------------------
 class _TypePicker extends StatelessWidget {
   final ValueChanged<QrCodeType> onSelect;
+  final ValueChanged<_SocialTemplate> onSelectSocial;
 
-  const _TypePicker({super.key, required this.onSelect});
+  const _TypePicker({
+    super.key,
+    required this.onSelect,
+    required this.onSelectSocial,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -573,6 +730,29 @@ class _TypePicker extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 12),
             child: _TypeOptionCard(type: t, onTap: () => onSelect(t)),
           ),
+        ),
+        const SizedBox(height: 8),
+        Text('Social & Payments',
+            style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        Text(
+          'Create a shareable link for your profiles and payment apps.',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 16),
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 2.4,
+          children: _socialTemplates
+              .map((t) => _SocialTemplateCard(
+                    template: t,
+                    onTap: () => onSelectSocial(t),
+                  ))
+              .toList(),
         ),
       ],
     );
@@ -631,6 +811,50 @@ class _TypeOptionCard extends StatelessWidget {
             const Icon(
               Icons.chevron_right_rounded,
               color: AppTheme.textSecondary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Social template card — compact 2-column grid tile
+// ---------------------------------------------------------------------------
+class _SocialTemplateCard extends StatelessWidget {
+  final _SocialTemplate template;
+  final VoidCallback onTap;
+
+  const _SocialTemplateCard({required this.template, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: template.color.withValues(alpha: 0.07),
+          border:
+              Border.all(color: template.color.withValues(alpha: 0.25)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(template.icon, color: template.color, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                template.label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
