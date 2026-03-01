@@ -189,8 +189,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final uri = Uri.tryParse(url);
     if (uri == null) return;
 
+    // externalApplication: opens the native app via Universal Links if installed,
+    // otherwise switches to Safari. Never uses an in-app browser.
     if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.platformDefault);
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
       _copy(url, label: 'URL copied (could not open browser)');
     }
