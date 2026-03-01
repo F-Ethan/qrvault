@@ -60,6 +60,8 @@ class _ScanScreenState extends ConsumerState<ScanScreen>
     with WidgetsBindingObserver {
   late final MobileScannerController _controller;
   bool _detected = false;
+  double _zoomScale = 0.0;
+  double _baseZoomScale = 0.0;
 
   @override
   void initState() {
@@ -233,67 +235,94 @@ class _ScanScreenState extends ConsumerState<ScanScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          // ── Camera ──────────────────────────────────────────────────────
-          MobileScanner(
-            controller: _controller,
-            onDetect: _onDetect,
-            errorBuilder: (context, error) => _CameraError(
-              error: error,
-              onClose: () => context.pop(),
+      body: GestureDetector(
+        // Pinch-to-zoom: track baseline at start, update on scale change.
+        onScaleStart: (_) => _baseZoomScale = _zoomScale,
+        onScaleUpdate: (details) {
+          if (details.pointerCount < 2) return;
+          final zoom =
+              (_baseZoomScale + (details.scale - 1.0) * 0.6).clamp(0.0, 1.0);
+          if ((zoom - _zoomScale).abs() > 0.004) {
+            setState(() => _zoomScale = zoom);
+            _controller.setZoomScale(zoom);
+          }
+        },
+        child: Stack(
+          children: [
+            // ── Camera ────────────────────────────────────────────────────
+            MobileScanner(
+              controller: _controller,
+              onDetect: _onDetect,
+              errorBuilder: (context, error) => _CameraError(
+                error: error,
+                onClose: () => context.pop(),
+              ),
             ),
-          ),
 
-          // ── Semi-transparent overlay + corner brackets ──────────────────
-          const _ScanOverlay(),
+            // ── Semi-transparent overlay + corner brackets ────────────────
+            const _ScanOverlay(),
 
-          // ── Top controls ────────────────────────────────────────────────
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            // ── Top controls ──────────────────────────────────────────────
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _OverlayButton(
+                      icon: Icons.close_rounded,
+                      onTap: () => context.pop(),
+                    ),
+                    _OverlayButton(
+                      icon: Icons.flash_on_rounded,
+                      onTap: () => _controller.toggleTorch(),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── Zoom slider ───────────────────────────────────────────────
+            Positioned(
+              bottom: 130,
+              left: 32,
+              right: 32,
+              child: _ZoomControl(
+                zoom: _zoomScale,
+                onChanged: (val) {
+                  setState(() => _zoomScale = val);
+                  _controller.setZoomScale(val);
+                },
+              ),
+            ),
+
+            // ── Bottom instruction ─────────────────────────────────────────
+            Positioned(
+              bottom: 72,
+              left: 0,
+              right: 0,
+              child: Column(
                 children: [
-                  _OverlayButton(
-                    icon: Icons.close_rounded,
-                    onTap: () => context.pop(),
+                  const Icon(
+                    Icons.qr_code_scanner_rounded,
+                    color: Colors.white54,
+                    size: 22,
                   ),
-                  _OverlayButton(
-                    icon: Icons.flash_on_rounded,
-                    onTap: () => _controller.toggleTorch(),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Point at any QR code to scan',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
             ),
-          ),
-
-          // ── Bottom instruction ───────────────────────────────────────────
-          Positioned(
-            bottom: 80,
-            left: 0,
-            right: 0,
-            child: Column(
-              children: [
-                const Icon(
-                  Icons.qr_code_scanner_rounded,
-                  color: Colors.white54,
-                  size: 22,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Point at any QR code to scan',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.8),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -805,6 +834,86 @@ class _CameraError extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Zoom control — slider + zoom level label, shown at bottom of camera view
+// ---------------------------------------------------------------------------
+class _ZoomControl extends StatelessWidget {
+  final double zoom;
+  final ValueChanged<double> onChanged;
+
+  const _ZoomControl({required this.zoom, required this.onChanged});
+
+  // Map 0.0–1.0 to a display string like "1.0×" – "5.0×".
+  String get _label => '${(1.0 + zoom * 4.0).toStringAsFixed(1)}×';
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        // 1× reset tap
+        GestureDetector(
+          onTap: () => onChanged(0.0),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '1×',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: zoom == 0 ? 0.45 : 1.0),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Slider
+        Expanded(
+          child: SliderTheme(
+            data: SliderThemeData(
+              trackHeight: 2.5,
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+              activeTrackColor: Colors.white,
+              inactiveTrackColor: Colors.white24,
+              thumbColor: Colors.white,
+              overlayColor: Colors.white24,
+            ),
+            child: Slider(
+              value: zoom,
+              min: 0.0,
+              max: 1.0,
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Zoom level label
+        Container(
+          width: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.45),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            _label,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
