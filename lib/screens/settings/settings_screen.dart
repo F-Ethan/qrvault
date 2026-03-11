@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/settings_providers.dart';
@@ -163,12 +164,149 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider);
+    final isGuest = ref.watch(guestModeProvider);
     final user = _user;
     final initials = _initials(
       _nameCtrl.text.isNotEmpty
           ? _nameCtrl.text
           : (user?.email ?? '?'),
     );
+
+    // Guests see a stripped-down settings screen with a sign-up prompt
+    if (isGuest) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Settings')),
+        body: ListView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          children: [
+            const SizedBox(height: 16),
+            // Sign-up card
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                    color: AppTheme.primary.withValues(alpha: 0.25)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.person_add_outlined,
+                            color: AppTheme.primary),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Create a free account',
+                                style:
+                                    Theme.of(context).textTheme.titleMedium),
+                            Text('Save and manage your QR codes',
+                                style:
+                                    Theme.of(context).textTheme.bodySmall),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () => context.push('/sign-up'),
+                    child: const Text('Sign Up — It\'s Free'),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton(
+                    onPressed: () => context.push('/sign-in'),
+                    child: const Text('Sign In'),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // Location section still works for guests
+            _SectionHeader('Location'),
+            _SettingsCard(
+              children: [_NearbyRadiusRow()],
+            ),
+
+            const SizedBox(height: 24),
+
+            // Appearance still works for guests
+            _SectionHeader('Appearance'),
+            _SettingsCard(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.brightness_6_outlined,
+                              color: AppTheme.textSecondary, size: 20),
+                          const SizedBox(width: 12),
+                          Text('Theme',
+                              style:
+                                  Theme.of(context).textTheme.bodyLarge),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      SegmentedButton<ThemeMode>(
+                        style: SegmentedButton.styleFrom(
+                          selectedBackgroundColor:
+                              AppTheme.primary.withValues(alpha: 0.12),
+                          selectedForegroundColor: AppTheme.primary,
+                        ),
+                        segments: const [
+                          ButtonSegment(
+                            value: ThemeMode.system,
+                            label: Text('System'),
+                            icon: Icon(Icons.brightness_auto_rounded,
+                                size: 16),
+                          ),
+                          ButtonSegment(
+                            value: ThemeMode.light,
+                            label: Text('Light'),
+                            icon: Icon(Icons.light_mode_rounded, size: 16),
+                          ),
+                          ButtonSegment(
+                            value: ThemeMode.dark,
+                            label: Text('Dark'),
+                            icon: Icon(Icons.dark_mode_rounded, size: 16),
+                          ),
+                        ],
+                        selected: {themeMode},
+                        onSelectionChanged: (modes) {
+                          ref
+                              .read(themeModeProvider.notifier)
+                              .setMode(modes.first);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 40),
+          ],
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(

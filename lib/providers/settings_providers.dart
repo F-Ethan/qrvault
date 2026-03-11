@@ -33,6 +33,20 @@ class ThemeModeNotifier extends Notifier<ThemeMode> {
 }
 
 // ---------------------------------------------------------------------------
+// Guest mode — in-memory only, resets to false on app launch
+// ---------------------------------------------------------------------------
+final guestModeProvider = NotifierProvider<GuestModeNotifier, bool>(
+  GuestModeNotifier.new,
+);
+
+class GuestModeNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void setGuest(bool value) => state = value;
+}
+
+// ---------------------------------------------------------------------------
 // Nearby radius — stored as miles (1–25), default 1
 // ---------------------------------------------------------------------------
 const _kNearbyRadiusMilesKey = 'nearby_radius_miles';

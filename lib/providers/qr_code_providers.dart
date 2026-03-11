@@ -26,6 +26,8 @@ final qrCodesProvider =
 class QrCodesNotifier extends AsyncNotifier<List<QrCodeModel>> {
   @override
   Future<List<QrCodeModel>> build() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return [];
     return ref.read(qrCodeRepositoryProvider).getAll();
   }
 

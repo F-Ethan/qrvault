@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/theme/app_theme.dart';
+import '../../providers/settings_providers.dart';
 
-class SignUpScreen extends StatefulWidget {
+class SignUpScreen extends ConsumerStatefulWidget {
   const SignUpScreen({super.key});
 
   @override
-  State<SignUpScreen> createState() => _SignUpScreenState();
+  ConsumerState<SignUpScreen> createState() => _SignUpScreenState();
 }
 
-class _SignUpScreenState extends State<SignUpScreen> {
+class _SignUpScreenState extends ConsumerState<SignUpScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -84,6 +86,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   setState(() => _obscureConfirm = !_obscureConfirm),
               onSignUp: _signUp,
               onSignIn: () => context.pop(),
+              onExplore: () {
+                ref.read(guestModeProvider.notifier).setGuest(true);
+                context.go('/');
+              },
             ),
           ),
         ),
@@ -108,6 +114,7 @@ class _FormView extends StatelessWidget {
   final VoidCallback onToggleConfirm;
   final VoidCallback onSignUp;
   final VoidCallback onSignIn;
+  final VoidCallback onExplore;
 
   const _FormView({
     required this.formKey,
@@ -122,6 +129,7 @@ class _FormView extends StatelessWidget {
     required this.onToggleConfirm,
     required this.onSignUp,
     required this.onSignIn,
+    required this.onExplore,
   });
 
   @override
@@ -279,6 +287,29 @@ class _FormView extends StatelessWidget {
                 child: const Text('Sign in'),
               ),
             ],
+          ),
+
+          // Divider
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Expanded(child: Divider()),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  'or',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+              const Expanded(child: Divider()),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Explore without account
+          OutlinedButton(
+            onPressed: onExplore,
+            child: const Text('Explore without an account'),
           ),
 
           const SizedBox(height: 48),

@@ -121,13 +121,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isGuest = ref.watch(guestModeProvider);
     final codesAsync = ref.watch(qrCodesProvider);
     // Watch radius so Near You updates immediately when slider changes.
     final radiusKm = ref.watch(nearbyRadiusProvider) * 1.60934;
 
     // Compute nearby codes reactively — codes are guaranteed to be loaded here.
     List<QrCodeModel>? nearbyCodes;
-    if (!_locationLoading && !_locationDenied && _userPosition != null) {
+    if (!isGuest && !_locationLoading && !_locationDenied && _userPosition != null) {
       final allCodes = codesAsync.asData?.value ?? [];
       nearbyCodes = allCodes.where((qr) {
         final lat = qr.lastScannedLat ?? qr.firstScannedLat;
@@ -149,10 +150,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ),
       body: RefreshIndicator(
         onRefresh: () async {
-          await Future.wait([
-            ref.read(qrCodesProvider.notifier).refresh(),
-            _fetchPosition(),
-          ]);
+          if (!isGuest) {
+            await Future.wait([
+              ref.read(qrCodesProvider.notifier).refresh(),
+              _fetchPosition(),
+            ]);
+          }
         },
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -162,22 +165,72 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
                 child: Text(
-                  '${_greeting()}${_nameSuffix()}',
+                  isGuest ? 'Welcome to QRVault' : '${_greeting()}${_nameSuffix()}',
                   style: Theme.of(context).textTheme.headlineMedium,
                 ),
               ),
             ),
 
-            // ── Near You ────────────────────────────────────────────────────
-            SliverToBoxAdapter(
-              child: _NearYouSection(
-                codes: nearbyCodes,
-                loading: _locationLoading,
-                denied: _locationDenied,
-                locationError: _locationError,
-                onRetry: _fetchPosition,
+            // ── Guest sign-up prompt ─────────────────────────────────────
+            if (isGuest)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                          color: AppTheme.primary.withValues(alpha: 0.25)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Save your QR codes',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          "You're exploring as a guest. Sign up for free to save scanned codes, create custom ones, and build your library.",
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: FilledButton(
+                                onPressed: () => context.push('/sign-up'),
+                                child: const Text('Sign Up Free'),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => context.push('/sign-in'),
+                                child: const Text('Sign In'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            ),
+
+            // ── Near You (signed-in only) ────────────────────────────────
+            if (!isGuest)
+              SliverToBoxAdapter(
+                child: _NearYouSection(
+                  codes: nearbyCodes,
+                  loading: _locationLoading,
+                  denied: _locationDenied,
+                  locationError: _locationError,
+                  onRetry: _fetchPosition,
+                ),
+              ),
 
             // ── Codes (stats + recent) or empty state ────────────────────
             codesAsync.when(

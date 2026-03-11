@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/models/qr_code_model.dart';
 import '../../providers/qr_code_providers.dart';
+import '../../providers/settings_providers.dart';
 
 // ---------------------------------------------------------------------------
 // Top-level helpers — accessed by both state and sub-widgets
@@ -275,6 +276,25 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
   // ---------------------------------------------------------------------------
   Future<void> _save() async {
     if (!_isValid()) return;
+
+    // Guests cannot save — show sign-up prompt instead
+    if (ref.read(guestModeProvider)) {
+      showModalBottomSheet(
+        context: context,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (_) => _GuestSaveSheet(
+          onSignUp: () {
+            Navigator.pop(context);
+            context.push('/sign-up');
+          },
+          onDismiss: () => Navigator.pop(context),
+        ),
+      );
+      return;
+    }
+
     setState(() => _saving = true);
 
     try {
@@ -901,6 +921,79 @@ class _ColourCircle extends StatelessWidget {
                 ]
               : null,
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Guest save sheet — shown when a guest tries to save a QR code
+// ---------------------------------------------------------------------------
+class _GuestSaveSheet extends StatelessWidget {
+  final VoidCallback onSignUp;
+  final VoidCallback onDismiss;
+
+  const _GuestSaveSheet({required this.onSignUp, required this.onDismiss});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        24,
+        16,
+        24,
+        MediaQuery.of(context).viewInsets.bottom + 40,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppTheme.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.save_outlined,
+                color: AppTheme.primary, size: 32),
+          ),
+          const SizedBox(height: 16),
+
+          Text(
+            'Sign up to save QR codes',
+            style: Theme.of(context).textTheme.titleLarge,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "It's free! Create an account to build your personal QR code library.",
+            style: Theme.of(context).textTheme.bodyMedium,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 24),
+
+          FilledButton(
+            onPressed: onSignUp,
+            child: const Text('Create a Free Account'),
+          ),
+          const SizedBox(height: 10),
+          TextButton(
+            onPressed: onDismiss,
+            child: const Text('Maybe later'),
+          ),
+        ],
       ),
     );
   }

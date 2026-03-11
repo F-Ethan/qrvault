@@ -17,6 +17,7 @@ import '../../screens/detail/detail_screen.dart';
 import '../../screens/mycards/my_cards_screen.dart';
 import '../../screens/onboarding/onboarding_screen.dart';
 import '../../providers/onboarding_provider.dart';
+import '../../providers/settings_providers.dart';
 
 // Notifies GoRouter whenever Supabase auth state changes so the redirect
 // guard re-evaluates immediately (sign-in → home, sign-out → sign-in).
@@ -53,14 +54,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final session = Supabase.instance.client.auth.currentSession;
       final isSignedIn = session != null;
+      final isGuest = ref.read(guestModeProvider);
       final isOnAuthRoute = state.matchedLocation == '/sign-in' ||
           state.matchedLocation == '/sign-up';
       final isOnOnboarding = state.matchedLocation == '/onboarding';
       final hasSeenOnboarding = ref.read(hasSeenOnboardingProvider);
 
-      // Signed-in users always go to home
-      if (isSignedIn && (isOnAuthRoute || isOnOnboarding)) return '/';
-      if (isSignedIn) return null;
+      // Signed-in users always go to home; clear guest flag if just signed in
+      if (isSignedIn) {
+        if (isGuest) ref.read(guestModeProvider.notifier).setGuest(false);
+        if (isOnAuthRoute || isOnOnboarding) return '/';
+        return null;
+      }
+
+      // Guest users can browse the main app freely
+      if (isGuest) return null;
 
       // First-time visitors see onboarding before auth screens
       if (!hasSeenOnboarding && !isOnOnboarding) return '/onboarding';

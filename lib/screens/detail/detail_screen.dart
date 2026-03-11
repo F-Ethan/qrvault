@@ -185,16 +185,23 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     );
   }
 
-  Future<void> _launchUrl(String url) async {
-    final uri = Uri.tryParse(url);
+  Future<void> _launchUrl(QrCodeModel code) async {
+    final uri = Uri.tryParse(code.content);
     if (uri == null) return;
 
     // externalApplication: opens the native app via Universal Links if installed,
     // otherwise switches to Safari. Never uses an in-app browser.
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
+      // Increment usage count and update last-used date in the background.
+      ref.read(qrCodesProvider.notifier).updateCode(
+            code.copyWith(
+              scanCount: code.scanCount + 1,
+              lastScannedAt: DateTime.now(),
+            ),
+          );
     } else {
-      _copy(url, label: 'URL copied (could not open browser)');
+      _copy(code.content, label: 'URL copied (could not open browser)');
     }
   }
 
@@ -400,7 +407,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             icon: Icons.open_in_browser_rounded,
             text: code.content,
             actionLabel: 'Open',
-            onTap: () => _launchUrl(code.content),
+            onTap: () => _launchUrl(code),
             onCopy: () => _copy(code.content, label: 'URL copied'),
           ),
         QrCodeType.email => _ActionTile(
@@ -410,7 +417,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 .split('?')
                 .first,
             actionLabel: 'Open',
-            onTap: () => _launchUrl(code.content),
+            onTap: () => _launchUrl(code),
             onCopy: () => _copy(code.content, label: 'Email copied'),
           ),
         QrCodeType.wifi => _buildWifiAction(code.content),
