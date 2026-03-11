@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/onboarding_provider.dart';
+import '../../providers/settings_providers.dart';
 
 // ---------------------------------------------------------------------------
 // Data for each carousel page
@@ -98,6 +99,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     context.go('/sign-up');
   }
 
+  void _explore() {
+    markOnboardingSeen(ref);
+    ref.read(guestModeProvider.notifier).setGuest(true);
+    context.go('/');
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -148,6 +155,17 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                     child: TextButton(
                       onPressed: _goToSignIn,
                       child: const Text('Sign In'),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton(
+                      onPressed: _explore,
+                      child: const Text(
+                        'Explore without an account',
+                        style: TextStyle(fontWeight: FontWeight.w400),
+                      ),
                     ),
                   ),
                 ],
