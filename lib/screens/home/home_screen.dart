@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
@@ -12,18 +10,6 @@ import '../../data/models/qr_code_model.dart';
 import '../../providers/qr_code_providers.dart';
 import '../../providers/settings_providers.dart';
 
-// Haversine distance in km using dart:math for accuracy.
-double _haversineKm(double lat1, double lon1, double lat2, double lon2) {
-  const r = 6371.0;
-  final dLat = (lat2 - lat1) * math.pi / 180;
-  final dLon = (lon2 - lon1) * math.pi / 180;
-  final a = math.pow(math.sin(dLat / 2), 2) +
-      math.cos(lat1 * math.pi / 180) *
-          math.cos(lat2 * math.pi / 180) *
-          math.pow(math.sin(dLon / 2), 2);
-  return r * 2 * math.asin(math.sqrt(a));
-}
-
 // ---------------------------------------------------------------------------
 // Home Screen
 // ---------------------------------------------------------------------------
@@ -35,8 +21,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  // We only store the user's position — nearby filtering happens in build()
-  // so it always has access to the fully-loaded qrCodesProvider data.
   Position? _userPosition;
   bool _locationLoading = true;
   bool _locationDenied = false;
@@ -63,17 +47,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
-        if (mounted) {
-          setState(() {
-            _locationDenied = true;
-            _locationLoading = false;
-          });
-        }
+        if (mounted) setState(() { _locationDenied = true; _locationLoading = false; });
         return;
       }
 
-      // Use last known position first — instant, no timeout risk.
-      // Fall back to a live fix only when no cached position exists.
       Position? position = await Geolocator.getLastKnownPosition();
       position ??= await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
@@ -82,20 +59,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
       );
 
-      if (mounted) {
-        setState(() {
-          _userPosition = position;
-          _locationLoading = false;
-        });
-      }
+      if (mounted) setState(() { _userPosition = position; _locationLoading = false; });
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          _userPosition = null;
-          _locationLoading = false;
-          _locationError = true;
-        });
-      }
+      if (mounted) setState(() { _userPosition = null; _locationLoading = false; _locationError = true; });
     }
   }
 
@@ -106,15 +72,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return 'Good evening';
   }
 
-  /// Returns a first-name suffix like " Ethan", or empty string if unknown.
   String _nameSuffix() {
     final user = Supabase.instance.client.auth.currentUser;
     final fullName = user?.userMetadata?['full_name'] as String?;
     if (fullName != null && fullName.isNotEmpty) {
       return ', ${fullName.split(' ').first}';
     }
-    final email = user?.email ?? '';
-    final prefix = email.split('@').first;
+    final prefix = (user?.email ?? '').split('@').first;
     if (prefix.isNotEmpty) return ', $prefix';
     return '';
   }
@@ -123,31 +87,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final isGuest = ref.watch(guestModeProvider);
     final codesAsync = ref.watch(qrCodesProvider);
-    // Watch radius so Near You updates immediately when slider changes.
     final radiusKm = ref.watch(nearbyRadiusProvider) * 1.60934;
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
 
-    // Compute nearby codes reactively — codes are guaranteed to be loaded here.
-    List<QrCodeModel>? nearbyCodes;
+    // Fetch public nearby codes from all users.
+    List<QrCodeModel> publicNearby = const [];
     if (!isGuest && !_locationLoading && !_locationDenied && _userPosition != null) {
-      final allCodes = codesAsync.asData?.value ?? [];
-      nearbyCodes = allCodes.where((qr) {
-        final lat = qr.lastScannedLat ?? qr.firstScannedLat;
-        final lng = qr.lastScannedLng ?? qr.firstScannedLng;
-        if (lat == null || lng == null) return false;
-        return _haversineKm(
-              _userPosition!.latitude,
-              _userPosition!.longitude,
-              lat,
-              lng,
-            ) <=
-            radiusKm;
-      }).toList();
+      final nearbyAsync = ref.watch(nearbyPublicProvider((
+        lat: _userPosition!.latitude,
+        lng: _userPosition!.longitude,
+        radiusKm: radiusKm,
+      )));
+      publicNearby = nearbyAsync.asData?.value ?? [];
     }
 
+    // Near You = user's own codes with nearby location + public codes from others.
+    List<QrCodeModel>? nearbyCodes;
+    if (!isGuest && !_locationLoading && !_locationDenied && _userPosition != null) {
+      final userCodes = codesAsync.asData?.value ?? [];
+      final seen = <String>{};
+      final merged = <QrCodeModel>[];
+      // Public codes first (includes own public + others' public).
+      for (final c in publicNearby) {
+        if (seen.add(c.id)) merged.add(c);
+      }
+      // Then user's own private codes with location nearby.
+      for (final c in userCodes) {
+        if (c.isPublic) continue; // already in publicNearby
+        final lat = c.lastScannedLat ?? c.firstScannedLat;
+        final lng = c.lastScannedLng ?? c.firstScannedLng;
+        if (lat == null || lng == null) continue;
+        if (seen.add(c.id)) merged.add(c);
+      }
+      nearbyCodes = merged;
+    }
+
+    // Popular Nearby = public codes sorted by scanCount descending.
+    final popularCodes = [...publicNearby]
+      ..sort((a, b) => b.scanCount.compareTo(a.scanCount));
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('QRVault'),
-      ),
+      appBar: AppBar(title: const Text('QRVault')),
       body: RefreshIndicator(
         onRefresh: () async {
           if (!isGuest) {
@@ -160,7 +140,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
-            // ── Greeting ────────────────────────────────────────────────────
+            // ── Greeting ──────────────────────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
@@ -171,7 +151,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ),
 
-            // ── Guest sign-up prompt ─────────────────────────────────────
+            // ── Guest sign-up prompt ───────────────────────────────────
             if (isGuest)
               SliverToBoxAdapter(
                 child: Padding(
@@ -181,16 +161,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     decoration: BoxDecoration(
                       color: AppTheme.primary.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                          color: AppTheme.primary.withValues(alpha: 0.25)),
+                      border: Border.all(color: AppTheme.primary.withValues(alpha: 0.25)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Save your QR codes',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
+                        Text('Save your QR codes', style: Theme.of(context).textTheme.titleMedium),
                         const SizedBox(height: 6),
                         Text(
                           "You're exploring as a guest. Sign up for free to save scanned codes, create custom ones, and build your library.",
@@ -220,19 +196,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
               ),
 
-            // ── Near You (signed-in only) ────────────────────────────────
+            // ── Near You (signed-in only) ──────────────────────────────
             if (!isGuest)
               SliverToBoxAdapter(
-                child: _NearYouSection(
+                child: _NearbySection(
+                  title: 'Near You',
+                  icon: Icons.location_on_outlined,
                   codes: nearbyCodes,
                   loading: _locationLoading,
                   denied: _locationDenied,
                   locationError: _locationError,
+                  currentUserId: currentUserId,
                   onRetry: _fetchPosition,
+                  emptyMessage: 'No codes near your current location',
                 ),
               ),
 
-            // ── Codes (stats + recent) or empty state ────────────────────
+            // ── Popular Nearby (signed-in only) ───────────────────────
+            if (!isGuest && popularCodes.isNotEmpty)
+              SliverToBoxAdapter(
+                child: _NearbySection(
+                  title: 'Popular Nearby',
+                  icon: Icons.trending_up_rounded,
+                  codes: popularCodes,
+                  loading: false,
+                  denied: false,
+                  locationError: false,
+                  currentUserId: currentUserId,
+                  emptyMessage: '',
+                ),
+              ),
+
+            // ── Codes (stats + recent) or empty state ─────────────────
             codesAsync.when(
               loading: () => const SliverFillRemaining(
                 child: Center(child: CircularProgressIndicator()),
@@ -240,10 +235,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               error: (e, _) => SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.all(20),
-                  child: Text(
-                    'Failed to load codes: $e',
-                    style: const TextStyle(color: AppTheme.danger),
-                  ),
+                  child: Text('Failed to load codes: $e',
+                      style: const TextStyle(color: AppTheme.danger)),
                 ),
               ),
               data: (codes) {
@@ -256,7 +249,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 return SliverList(
                   delegate: SliverChildListDelegate([
                     _StatsBar(codes: codes),
-                    _RecentCodesSection(codes: codes.take(5).toList()),
+                    _RecentCodesSection(
+                      codes: codes.take(5).toList(),
+                      currentUserId: currentUserId,
+                    ),
                     const SizedBox(height: 100),
                   ]),
                 );
@@ -270,20 +266,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 }
 
 // ---------------------------------------------------------------------------
-// Near You section
+// Reusable nearby section (Near You + Popular Nearby)
 // ---------------------------------------------------------------------------
-class _NearYouSection extends StatelessWidget {
+class _NearbySection extends StatelessWidget {
+  final String title;
+  final IconData icon;
   final List<QrCodeModel>? codes;
   final bool loading;
   final bool denied;
   final bool locationError;
+  final String? currentUserId;
   final VoidCallback? onRetry;
+  final String emptyMessage;
 
-  const _NearYouSection({
+  const _NearbySection({
+    required this.title,
+    required this.icon,
     required this.codes,
     required this.loading,
     required this.denied,
-    this.locationError = false,
+    required this.locationError,
+    required this.currentUserId,
+    required this.emptyMessage,
     this.onRetry,
   });
 
@@ -296,43 +300,34 @@ class _NearYouSection extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
           child: Row(
             children: [
-              const Icon(
-                Icons.location_on_outlined,
-                size: 18,
-                color: AppTheme.textSecondary,
-              ),
+              Icon(icon, size: 18, color: AppTheme.textSecondary),
               const SizedBox(width: 4),
-              Text(
-                'Near You',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              Text(title, style: Theme.of(context).textTheme.titleMedium),
             ],
           ),
         ),
         if (loading)
           const SizedBox(
             height: 120,
-            child: Center(
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
           )
         else if (denied)
-          _NearYouPlaceholder(
+          _NearbyPlaceholder(
             icon: Icons.location_off_outlined,
             message: 'Enable location to see nearby codes',
           )
         else if (locationError)
           GestureDetector(
             onTap: onRetry,
-            child: _NearYouPlaceholder(
+            child: _NearbyPlaceholder(
               icon: Icons.refresh,
               message: 'Could not get location — tap to retry',
             ),
           )
         else if (codes == null || codes!.isEmpty)
-          _NearYouPlaceholder(
+          _NearbyPlaceholder(
             icon: Icons.explore_outlined,
-            message: 'No saved codes near your current location',
+            message: emptyMessage,
           )
         else
           SizedBox(
@@ -342,7 +337,10 @@ class _NearYouSection extends StatelessWidget {
               scrollDirection: Axis.horizontal,
               itemCount: codes!.length,
               separatorBuilder: (_, __) => const SizedBox(width: 12),
-              itemBuilder: (_, i) => _QrCard(code: codes![i]),
+              itemBuilder: (_, i) => _QrCard(
+                code: codes![i],
+                isOwner: codes![i].userId == currentUserId,
+              ),
             ),
           ),
         const SizedBox(height: 28),
@@ -351,11 +349,10 @@ class _NearYouSection extends StatelessWidget {
   }
 }
 
-class _NearYouPlaceholder extends StatelessWidget {
+class _NearbyPlaceholder extends StatelessWidget {
   final IconData icon;
   final String message;
-
-  const _NearYouPlaceholder({required this.icon, required this.message});
+  const _NearbyPlaceholder({required this.icon, required this.message});
 
   @override
   Widget build(BuildContext context) {
@@ -383,15 +380,12 @@ class _NearYouPlaceholder extends StatelessWidget {
 // ---------------------------------------------------------------------------
 class _StatsBar extends StatelessWidget {
   final List<QrCodeModel> codes;
-
   const _StatsBar({required this.codes});
 
   @override
   Widget build(BuildContext context) {
-    final scanned =
-        codes.where((c) => c.source == QrCodeSource.scanned).length;
-    final created =
-        codes.where((c) => c.source == QrCodeSource.created).length;
+    final scanned = codes.where((c) => c.source == QrCodeSource.scanned).length;
+    final created = codes.where((c) => c.source == QrCodeSource.created).length;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(20, 0, 20, 24),
@@ -399,9 +393,7 @@ class _StatsBar extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppTheme.primary.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppTheme.primary.withValues(alpha: 0.15),
-        ),
+        border: Border.all(color: AppTheme.primary.withValues(alpha: 0.15)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -426,7 +418,6 @@ class _VerticalDivider extends StatelessWidget {
 class _StatItem extends StatelessWidget {
   final String value;
   final String label;
-
   const _StatItem({required this.value, required this.label});
 
   @override
@@ -450,12 +441,12 @@ class _StatItem extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Recent Codes section
+// Recent codes section — user's own codes only
 // ---------------------------------------------------------------------------
 class _RecentCodesSection extends StatelessWidget {
   final List<QrCodeModel> codes;
-
-  const _RecentCodesSection({required this.codes});
+  final String? currentUserId;
+  const _RecentCodesSection({required this.codes, required this.currentUserId});
 
   @override
   Widget build(BuildContext context) {
@@ -467,10 +458,7 @@ class _RecentCodesSection extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Recent',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
+              Text('Recent', style: Theme.of(context).textTheme.titleMedium),
               TextButton(
                 onPressed: () => context.go('/library'),
                 child: const Text('See all'),
@@ -485,7 +473,10 @@ class _RecentCodesSection extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             itemCount: codes.length,
             separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (_, i) => _QrCard(code: codes[i]),
+            itemBuilder: (_, i) => _QrCard(
+              code: codes[i],
+              isOwner: true, // Recent only shows the user's own codes
+            ),
           ),
         ),
       ],
@@ -494,12 +485,13 @@ class _RecentCodesSection extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// QR code card — shared by Near You and Recent
+// QR code card — used by Near You, Popular, and Recent
 // ---------------------------------------------------------------------------
 class _QrCard extends StatelessWidget {
   final QrCodeModel code;
+  final bool isOwner;
 
-  const _QrCard({required this.code});
+  const _QrCard({required this.code, required this.isOwner});
 
   Color _hexToColor(String hex) {
     final clean = hex.replaceAll('#', '');
@@ -533,19 +525,12 @@ class _QrCard extends StatelessWidget {
                   version: QrVersions.auto,
                   size: 84,
                   backgroundColor: bgColor,
-                  eyeStyle: QrEyeStyle(
-                    eyeShape: QrEyeShape.square,
-                    color: fgColor,
-                  ),
-                  dataModuleStyle: QrDataModuleStyle(
-                    dataModuleShape: QrDataModuleShape.square,
-                    color: fgColor,
-                  ),
+                  eyeStyle: QrEyeStyle(eyeShape: QrEyeShape.square, color: fgColor),
+                  dataModuleStyle: QrDataModuleStyle(dataModuleShape: QrDataModuleShape.square, color: fgColor),
                 ),
               ),
             ),
             const SizedBox(height: 8),
-            // Label
             Text(
               code.label,
               maxLines: 1,
@@ -557,8 +542,13 @@ class _QrCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
-            // Type badge
-            _TypeBadge(type: code.type),
+            Row(
+              children: [
+                _TypeBadge(type: code.type),
+                const SizedBox(width: 4),
+                _OwnerBadge(isOwner: isOwner),
+              ],
+            ),
           ],
         ),
       ),
@@ -566,9 +556,58 @@ class _QrCard extends StatelessWidget {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Ownership badge
+// ---------------------------------------------------------------------------
+class _OwnerBadge extends StatelessWidget {
+  final bool isOwner;
+  const _OwnerBadge({required this.isOwner});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: isOwner
+            ? AppTheme.primary.withValues(alpha: 0.15)
+            : Colors.grey.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: isOwner
+              ? AppTheme.primary.withValues(alpha: 0.35)
+              : Colors.grey.withValues(alpha: 0.35),
+          width: 0.5,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isOwner ? Icons.person_rounded : Icons.public_rounded,
+            size: 9,
+            color: isOwner ? AppTheme.primary : AppTheme.textSecondary,
+          ),
+          const SizedBox(width: 2),
+          Text(
+            isOwner ? 'Mine' : 'Public',
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
+              color: isOwner ? AppTheme.primary : AppTheme.textSecondary,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Type badge
+// ---------------------------------------------------------------------------
 class _TypeBadge extends StatelessWidget {
   final QrCodeType type;
-
   const _TypeBadge({required this.type});
 
   @override
@@ -593,7 +632,7 @@ class _TypeBadge extends StatelessWidget {
 }
 
 // ---------------------------------------------------------------------------
-// Full empty state — first-time users with zero codes
+// Full empty state
 // ---------------------------------------------------------------------------
 class _EmptyState extends StatelessWidget {
   const _EmptyState();
@@ -612,18 +651,11 @@ class _EmptyState extends StatelessWidget {
               color: AppTheme.primary.withValues(alpha: 0.08),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
-              Icons.qr_code_2_rounded,
-              size: 44,
-              color: AppTheme.primary,
-            ),
+            child: const Icon(Icons.qr_code_2_rounded, size: 44, color: AppTheme.primary),
           ),
           const SizedBox(height: 24),
-          Text(
-            'No QR codes yet',
-            style: Theme.of(context).textTheme.titleLarge,
-            textAlign: TextAlign.center,
-          ),
+          Text('No QR codes yet',
+              style: Theme.of(context).textTheme.titleLarge, textAlign: TextAlign.center),
           const SizedBox(height: 10),
           Text(
             'Tap the + button below to scan or create your first QR code.',

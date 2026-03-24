@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../data/models/qr_code_model.dart';
@@ -26,6 +27,7 @@ class LibraryScreen extends ConsumerStatefulWidget {
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   _Filter _activeFilter = _Filter.all;
   String _searchQuery = '';
+  bool _showAllCodes = false; // false = My Codes, true = All Public
   late final TextEditingController _searchController;
 
   @override
@@ -44,8 +46,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     var result = all;
 
     if (_activeFilter != _Filter.all) {
-      result =
-          result.where((c) => c.type.name == _activeFilter.name).toList();
+      result = result.where((c) => c.type.name == _activeFilter.name).toList();
     }
 
     if (_searchQuery.isNotEmpty) {
@@ -71,25 +72,32 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final codesAsync = ref.watch(qrCodesProvider);
+    final myCodesAsync = ref.watch(qrCodesProvider);
+    final publicCodesAsync = _showAllCodes ? ref.watch(publicCodesProvider) : null;
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+
+    // Pick the right source list.
+    final sourceAsync = _showAllCodes ? publicCodesAsync! : myCodesAsync;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Library'),
-      ),
-      body: codesAsync.when(
+      appBar: AppBar(title: const Text('Library')),
+      body: sourceAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(
-          child: Text(
-            'Failed to load: $e',
-            style: const TextStyle(color: AppTheme.danger),
-          ),
+          child: Text('Failed to load: $e',
+              style: const TextStyle(color: AppTheme.danger)),
         ),
         data: (codes) {
           final filtered = _applyFilters(codes);
 
           return RefreshIndicator(
-            onRefresh: () => ref.read(qrCodesProvider.notifier).refresh(),
+            onRefresh: () async {
+              if (_showAllCodes) {
+                ref.invalidate(publicCodesProvider);
+              } else {
+                await ref.read(qrCodesProvider.notifier).refresh();
+              }
+            },
             child: CustomScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
@@ -101,11 +109,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                       controller: _searchController,
                       onChanged: (v) => setState(() => _searchQuery = v),
                       decoration: InputDecoration(
-                        hintText: 'Search codes…',
-                        prefixIcon: const Icon(
-                          Icons.search_rounded,
-                          color: AppTheme.textSecondary,
-                        ),
+                        hintText: _showAllCodes
+                            ? 'Search all public codes…'
+                            : 'Search my codes…',
+                        prefixIcon: const Icon(Icons.search_rounded,
+                            color: AppTheme.textSecondary),
                         suffixIcon: _searchQuery.isNotEmpty
                             ? IconButton(
                                 icon: const Icon(Icons.clear_rounded),
@@ -117,6 +125,34 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                               )
                             : null,
                       ),
+                    ),
+                  ),
+                ),
+
+                // ── My / All toggle ─────────────────────────────────────────
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(
+                          value: false,
+                          label: Text('My Codes'),
+                          icon: Icon(Icons.person_rounded, size: 16),
+                        ),
+                        ButtonSegment(
+                          value: true,
+                          label: Text('All Public'),
+                          icon: Icon(Icons.public_rounded, size: 16),
+                        ),
+                      ],
+                      selected: {_showAllCodes},
+                      onSelectionChanged: (s) => setState(() {
+                        _showAllCodes = s.first;
+                        _activeFilter = _Filter.all;
+                        _searchQuery = '';
+                        _searchController.clear();
+                      }),
                     ),
                   ),
                 ),
@@ -138,13 +174,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                             showCheckmark: false,
                             onSelected: (_) =>
                                 setState(() => _activeFilter = f),
-                            backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
+                            backgroundColor: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerLow,
                             selectedColor:
                                 AppTheme.primary.withValues(alpha: 0.12),
                             side: BorderSide(
                               color: isActive
                                   ? AppTheme.primary
-                                  : Theme.of(context).colorScheme.outlineVariant,
+                                  : Theme.of(context)
+                                      .colorScheme
+                                      .outlineVariant,
                             ),
                             labelStyle: TextStyle(
                               fontSize: 13,
@@ -168,8 +208,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
                       child: Text(
-                        '${filtered.length} '
-                        'code${filtered.length == 1 ? '' : 's'}',
+                        '${filtered.length} code${filtered.length == 1 ? '' : 's'}',
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ),
@@ -201,7 +240,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                         childAspectRatio: 0.88,
                       ),
                       itemCount: filtered.length,
-                      itemBuilder: (_, i) => _LibraryCard(code: filtered[i]),
+                      itemBuilder: (_, i) => _LibraryCard(
+                        code: filtered[i],
+                        isOwner: filtered[i].userId == currentUserId,
+                        showOwnerBadge: _showAllCodes,
+                      ),
                     ),
                   ),
               ],
@@ -218,8 +261,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 // ---------------------------------------------------------------------------
 class _LibraryCard extends StatelessWidget {
   final QrCodeModel code;
+  final bool isOwner;
+  final bool showOwnerBadge;
 
-  const _LibraryCard({required this.code});
+  const _LibraryCard({
+    required this.code,
+    this.isOwner = true,
+    this.showOwnerBadge = false,
+  });
 
   Color _hexToColor(String hex) {
     final clean = hex.replaceAll('#', '');
@@ -281,10 +330,14 @@ class _LibraryCard extends StatelessWidget {
 
             const SizedBox(height: 4),
 
-            // Type badge + optional place
+            // Type badge + ownership badge + optional place
             Row(
               children: [
                 _TypeBadge(type: code.type),
+                if (showOwnerBadge) ...[
+                  const SizedBox(width: 4),
+                  _OwnerBadge(isOwner: isOwner),
+                ],
                 if (place != null) ...[
                   const SizedBox(width: 6),
                   const Icon(
@@ -309,6 +362,53 @@ class _LibraryCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ownership badge
+// ---------------------------------------------------------------------------
+class _OwnerBadge extends StatelessWidget {
+  final bool isOwner;
+  const _OwnerBadge({required this.isOwner});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: isOwner
+            ? AppTheme.primary.withValues(alpha: 0.15)
+            : Colors.grey.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: isOwner
+              ? AppTheme.primary.withValues(alpha: 0.35)
+              : Colors.grey.withValues(alpha: 0.35),
+          width: 0.5,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isOwner ? Icons.person_rounded : Icons.public_rounded,
+            size: 9,
+            color: isOwner ? AppTheme.primary : AppTheme.textSecondary,
+          ),
+          const SizedBox(width: 2),
+          Text(
+            isOwner ? 'Mine' : 'Public',
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
+              color: isOwner ? AppTheme.primary : AppTheme.textSecondary,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
       ),
     );
   }

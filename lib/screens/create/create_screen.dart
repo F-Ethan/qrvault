@@ -3,10 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../data/models/qr_code_model.dart';
+import '../../data/repositories/qr_code_repository.dart';
 import '../../providers/qr_code_providers.dart';
 import '../../providers/settings_providers.dart';
 
@@ -188,6 +190,7 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
   Color _fgColor = const Color(0xFF000000);
   Color _bgColor = const Color(0xFFFFFFFF);
 
+  bool _isPublic = false; // reset when type changes
   bool _saving = false;
 
   @override
@@ -311,6 +314,7 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
         type: _type,
         content: content,
         source: QrCodeSource.created,
+        isPublic: _isPublic,
         foregroundColor: _colorToHex(_fgColor),
         backgroundColor: _colorToHex(_bgColor),
         createdAt: DateTime.now(),
@@ -334,6 +338,18 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
     }
   }
 
+  Future<void> _openAndSave() async {
+    await _save();
+    if (!mounted) return;
+    final uri = Uri.tryParse(_buildContent());
+    if (uri != null && await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  bool get _canOpen =>
+      _type == QrCodeType.url || _type == QrCodeType.email;
+
   // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
@@ -356,6 +372,7 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
                     _type = t;
                     _socialTemplate = null;
                     _urlCtrl.clear();
+                    _isPublic = defaultIsPublic(t);
                     _step = 1;
                   });
                 },
@@ -364,6 +381,7 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
                     _type = QrCodeType.url;
                     _socialTemplate = template;
                     _urlCtrl.clear();
+                    _isPublic = defaultIsPublic(QrCodeType.url);
                     _step = 1;
                   });
                 },
@@ -499,9 +517,20 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
             ],
           ),
 
-          const SizedBox(height: 36),
+          const SizedBox(height: 24),
 
-          // ── Save button ────────────────────────────────────────────────────
+          // ── Visibility ─────────────────────────────────────────────────────
+          Text('Visibility', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 10),
+          _PublicToggle(
+            value: _isPublic,
+            type: _type,
+            onChanged: (v) => setState(() => _isPublic = v),
+          ),
+
+          const SizedBox(height: 28),
+
+          // ── Save buttons ───────────────────────────────────────────────────
           FilledButton(
             onPressed: (valid && !_saving) ? _save : null,
             child: _saving
@@ -515,6 +544,21 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
                   )
                 : const Text('Save to Library'),
           ),
+
+          if (_canOpen) ...[
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: (valid && !_saving) ? _openAndSave : null,
+              icon: const Icon(Icons.open_in_new_rounded, size: 18),
+              label: const Text('Open & Save'),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 52),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -920,6 +964,116 @@ class _ColourCircle extends StatelessWidget {
                   ),
                 ]
               : null,
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Public / private toggle
+// ---------------------------------------------------------------------------
+class _PublicToggle extends StatelessWidget {
+  final bool value;
+  final QrCodeType type;
+  final ValueChanged<bool> onChanged;
+
+  const _PublicToggle({
+    required this.value,
+    required this.type,
+    required this.onChanged,
+  });
+
+  Future<void> _handleTap(BuildContext context) async {
+    final next = !value;
+    if (next && isSensitiveType(type)) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Make public?'),
+          content: Text(sensitiveWarning(type)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Keep Private'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: TextButton.styleFrom(foregroundColor: AppTheme.danger),
+              child: const Text('Make Public'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed == true) onChanged(true);
+    } else {
+      onChanged(next);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _handleTap(context),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: value
+              ? AppTheme.primary.withValues(alpha: 0.06)
+              : Theme.of(context).colorScheme.surfaceContainerLow,
+          border: Border.all(
+            color: value
+                ? AppTheme.primary.withValues(alpha: 0.25)
+                : Theme.of(context).colorScheme.outlineVariant,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              value ? Icons.public_rounded : Icons.lock_outline_rounded,
+              size: 18,
+              color: value ? AppTheme.primary : AppTheme.textSecondary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value ? 'Public' : 'Private',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: value
+                          ? AppTheme.primary
+                          : Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  Text(
+                    value
+                        ? 'Visible to others nearby'
+                        : 'Only visible to you',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: value,
+              onChanged: (v) {
+                if (v && isSensitiveType(type)) {
+                  _handleTap(context);
+                } else {
+                  onChanged(v);
+                }
+              },
+              activeThumbColor: AppTheme.primary,
+            ),
+          ],
         ),
       ),
     );

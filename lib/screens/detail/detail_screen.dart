@@ -1,9 +1,18 @@
+import 'dart:io';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+
+import '../../data/repositories/qr_code_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -67,6 +76,8 @@ class DetailScreen extends ConsumerStatefulWidget {
 }
 
 class _DetailScreenState extends ConsumerState<DetailScreen> {
+  final _qrKey = GlobalKey();
+
   bool _initialized = false;
   bool _isEditing = false;
   bool _saving = false;
@@ -205,14 +216,49 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     }
   }
 
+  Future<void> _shareQr(QrCodeModel code) async {
+    // Capture render objects before any async gap.
+    final boundary =
+        _qrKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+    final box = context.findRenderObject() as RenderBox?;
+    final origin = box != null
+        ? box.localToGlobal(Offset.zero) & box.size
+        : Rect.fromLTWH(0, 0, 100, 100);
+
+    if (boundary == null) return;
+
+    try {
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return;
+
+      final tmpDir = await getTemporaryDirectory();
+      final file = File('${tmpDir.path}/qrvault_${code.id}.png');
+      await file.writeAsBytes(byteData.buffer.asUint8List());
+
+      await Share.shareXFiles(
+        [XFile(file.path, mimeType: 'image/png')],
+        subject: code.label,
+        sharePositionOrigin: origin,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not share: $e')),
+        );
+      }
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
-    final codesAsync = ref.watch(qrCodesProvider);
+    final codeAsync = ref.watch(codeByIdProvider(widget.id));
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
 
-    return codesAsync.when(
+    return codeAsync.when(
       loading: () => const Scaffold(
         body: Center(child: CircularProgressIndicator()),
       ),
@@ -220,8 +266,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         appBar: AppBar(),
         body: Center(child: Text('Error: $e')),
       ),
-      data: (codes) {
-        final code = codes.where((c) => c.id == widget.id).firstOrNull;
+      data: (code) {
         if (code == null) {
           return Scaffold(
             appBar: AppBar(),
@@ -229,6 +274,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           );
         }
 
+        final isOwner = code.userId == currentUserId;
         _initFromCode(code);
 
         return Scaffold(
@@ -265,30 +311,37 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   ]
                 : [
                     IconButton(
-                      icon: Icon(
-                        code.isPinned
-                            ? Icons.bookmark_rounded
-                            : Icons.bookmark_outline_rounded,
-                        color: code.isPinned ? AppTheme.primary : null,
+                      icon: const Icon(Icons.ios_share_rounded),
+                      onPressed: () => _shareQr(code),
+                      tooltip: 'Share',
+                    ),
+                    if (isOwner) ...[
+                      IconButton(
+                        icon: Icon(
+                          code.isPinned
+                              ? Icons.bookmark_rounded
+                              : Icons.bookmark_outline_rounded,
+                          color: code.isPinned ? AppTheme.primary : null,
+                        ),
+                        onPressed: () => _togglePin(code),
+                        tooltip: code.isPinned
+                            ? 'Remove from My Cards'
+                            : 'Add to My Cards',
                       ),
-                      onPressed: () => _togglePin(code),
-                      tooltip: code.isPinned
-                          ? 'Remove from My Cards'
-                          : 'Add to My Cards',
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.edit_outlined),
-                      onPressed: () => setState(() => _isEditing = true),
-                      tooltip: 'Edit',
-                    ),
-                    IconButton(
-                      icon: const Icon(
-                        Icons.delete_outline_rounded,
-                        color: AppTheme.danger,
+                      IconButton(
+                        icon: const Icon(Icons.edit_outlined),
+                        onPressed: () => setState(() => _isEditing = true),
+                        tooltip: 'Edit',
                       ),
-                      onPressed: () => _deleteCode(code),
-                      tooltip: 'Delete',
-                    ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.delete_outline_rounded,
+                          color: AppTheme.danger,
+                        ),
+                        onPressed: () => _deleteCode(code),
+                        tooltip: 'Delete',
+                      ),
+                    ],
                   ],
           ),
           body: SingleChildScrollView(
@@ -307,13 +360,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 const SizedBox(height: 24),
 
                 // ── Edit section: label + colours ────────────────────────────
-                if (_isEditing) ...[
+                if (isOwner && _isEditing) ...[
                   _buildEditSection(code),
                   const SizedBox(height: 24),
                 ],
 
                 // ── Details metadata ─────────────────────────────────────────
-                _buildDetailsSection(code),
+                _buildDetailsSection(code, isOwner: isOwner),
 
                 const SizedBox(height: 24),
 
@@ -323,8 +376,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   const SizedBox(height: 24),
                 ],
 
-                // ── Delete ───────────────────────────────────────────────────
-                if (!_isEditing)
+                // ── Delete (owner only) ──────────────────────────────────────
+                if (isOwner && !_isEditing)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: OutlinedButton.icon(
@@ -360,31 +413,34 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     final bg = _isEditing ? _bgColor : _hexToColor(code.backgroundColor);
 
     return Center(
-      child: Container(
-        width: 280,
-        height: 280,
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.06),
-              blurRadius: 20,
-              offset: const Offset(0, 4),
+      child: RepaintBoundary(
+        key: _qrKey,
+        child: Container(
+          width: 280,
+          height: 280,
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 20,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: QrImageView(
+              data: code.content,
+              version: QrVersions.auto,
+              size: 280,
+              backgroundColor: bg,
+              eyeStyle: QrEyeStyle(eyeShape: QrEyeShape.square, color: fg),
+              dataModuleStyle:
+                  QrDataModuleStyle(dataModuleShape: QrDataModuleShape.square, color: fg),
             ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: QrImageView(
-            data: code.content,
-            version: QrVersions.auto,
-            size: 280,
-            backgroundColor: bg,
-            eyeStyle: QrEyeStyle(eyeShape: QrEyeShape.square, color: fg),
-            dataModuleStyle:
-                QrDataModuleStyle(dataModuleShape: QrDataModuleShape.square, color: fg),
           ),
         ),
       ),
@@ -669,7 +725,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   // ---------------------------------------------------------------------------
   // Details metadata section
   // ---------------------------------------------------------------------------
-  Widget _buildDetailsSection(QrCodeModel code) {
+  Widget _buildDetailsSection(QrCodeModel code, {bool isOwner = true}) {
     final typeLabels = {
       QrCodeType.url: 'URL',
       QrCodeType.text: 'Text',
@@ -706,6 +762,14 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 : '${code.scanCount} time${code.scanCount == 1 ? '' : 's'}',
           ),
           _InfoRow(label: 'Created', value: _fmt(code.createdAt)),
+          if (isOwner)
+            _PublicToggleRow(
+              value: code.isPublic,
+              type: code.type,
+              onChanged: (v) => ref
+                  .read(qrCodesProvider.notifier)
+                  .updateCode(code.copyWith(isPublic: v)),
+            ),
           if (code.lastScannedAt != null)
             _InfoRow(
               label: 'Last scanned',
@@ -975,6 +1039,85 @@ class _ContactRow extends StatelessWidget {
               size: 18, color: AppTheme.textSecondary),
         ),
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Public / private toggle row — inside the details info card
+// ---------------------------------------------------------------------------
+class _PublicToggleRow extends StatelessWidget {
+  final bool value;
+  final QrCodeType type;
+  final ValueChanged<bool> onChanged;
+
+  const _PublicToggleRow({
+    required this.value,
+    required this.type,
+    required this.onChanged,
+  });
+
+  Future<void> _handleChange(BuildContext context, bool next) async {
+    if (next && isSensitiveType(type)) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Make public?'),
+          content: Text(sensitiveWarning(type)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Keep Private'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: TextButton.styleFrom(foregroundColor: AppTheme.danger),
+              child: const Text('Make Public'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed == true) onChanged(true);
+    } else {
+      onChanged(next);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text('Visibility',
+                style: Theme.of(context).textTheme.bodyMedium),
+          ),
+          Icon(
+            value ? Icons.public_rounded : Icons.lock_outline_rounded,
+            size: 16,
+            color: value ? AppTheme.primary : AppTheme.textSecondary,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              value ? 'Public' : 'Private',
+              style: TextStyle(
+                color: value
+                    ? AppTheme.primary
+                    : Theme.of(context).colorScheme.onSurface,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: (v) => _handleChange(context, v),
+            activeThumbColor: AppTheme.primary,
+          ),
+        ],
+      ),
     );
   }
 }

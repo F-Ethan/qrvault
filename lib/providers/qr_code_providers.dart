@@ -23,6 +23,31 @@ final qrCodesProvider =
   QrCodesNotifier.new,
 );
 
+// -- Nearby public codes --
+// Keyed by (lat, lng, radiusKm) — fetched once after location is resolved.
+final nearbyPublicProvider = FutureProvider.autoDispose
+    .family<List<QrCodeModel>, ({double lat, double lng, double radiusKm})>(
+  (ref, params) => ref
+      .read(qrCodeRepositoryProvider)
+      .getPublicNearby(params.lat, params.lng, params.radiusKm),
+);
+
+// -- All public codes — used by Library "All" mode.
+final publicCodesProvider =
+    FutureProvider.autoDispose<List<QrCodeModel>>((ref) {
+  return ref.read(qrCodeRepositoryProvider).getPublicCodes();
+});
+
+// -- Single code by ID — checks user's list first, then fetches from DB.
+// Allows viewing other users' public codes from Near You / Popular.
+final codeByIdProvider =
+    FutureProvider.autoDispose.family<QrCodeModel?, String>((ref, id) async {
+  final userCodes = ref.watch(qrCodesProvider).asData?.value ?? [];
+  final local = userCodes.where((c) => c.id == id).firstOrNull;
+  if (local != null) return local;
+  return ref.read(qrCodeRepositoryProvider).getById(id);
+});
+
 class QrCodesNotifier extends AsyncNotifier<List<QrCodeModel>> {
   @override
   Future<List<QrCodeModel>> build() async {

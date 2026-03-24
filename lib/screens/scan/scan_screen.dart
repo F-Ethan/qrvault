@@ -11,6 +11,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../data/models/qr_code_model.dart';
+import '../../data/repositories/qr_code_repository.dart';
 import '../../providers/qr_code_providers.dart';
 import '../../providers/settings_providers.dart';
 
@@ -143,7 +144,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen>
           setState(() => _detected = false);
           _controller.start();
         },
-        onSave: (label) => _saveCode(raw, label),
+        onSave: (label, isPublic) => _saveCode(raw, label, isPublic),
       ),
     );
   }
@@ -151,7 +152,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen>
   // ---------------------------------------------------------------------------
   // Save
   // ---------------------------------------------------------------------------
-  Future<void> _saveCode(String content, String label) async {
+  Future<void> _saveCode(String content, String label, bool isPublic) async {
     // Guests cannot save — show sign-up prompt instead
     if (ref.read(guestModeProvider)) {
       if (!mounted) return;
@@ -227,6 +228,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen>
         type: type,
         content: content,
         source: QrCodeSource.scanned,
+        isPublic: isPublic,
         scanCount: 1,
         firstScannedAt: DateTime.now(),
         lastScannedAt: DateTime.now(),
@@ -594,7 +596,7 @@ class _FidoWarningSheet extends StatelessWidget {
 class _ConfirmSheet extends StatefulWidget {
   final String raw;
   final VoidCallback onScanAgain;
-  final Future<void> Function(String label) onSave;
+  final Future<void> Function(String label, bool isPublic) onSave;
 
   const _ConfirmSheet({
     required this.raw,
@@ -609,15 +611,15 @@ class _ConfirmSheet extends StatefulWidget {
 class _ConfirmSheetState extends State<_ConfirmSheet> {
   late final TextEditingController _labelCtrl;
   late final QrCodeType _type;
+  late bool _isPublic;
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     _type = _detectType(widget.raw);
-    _labelCtrl = TextEditingController(
-      text: _autoLabel(widget.raw, _type),
-    );
+    _isPublic = defaultIsPublic(_type);
+    _labelCtrl = TextEditingController();
   }
 
   @override
@@ -704,11 +706,20 @@ class _ConfirmSheetState extends State<_ConfirmSheet> {
           TextField(
             controller: _labelCtrl,
             textCapitalization: TextCapitalization.sentences,
-            decoration: const InputDecoration(
-              labelText: 'Label',
-              hintText: 'Give this code a name',
-              prefixIcon: Icon(Icons.label_outline_rounded),
+            decoration: InputDecoration(
+              labelText: 'Label (optional)',
+              hintText: _autoLabel(widget.raw, _type),
+              prefixIcon: const Icon(Icons.label_outline_rounded),
             ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Public toggle
+          _PublicToggle(
+            value: _isPublic,
+            type: _type,
+            onChanged: (v) => setState(() => _isPublic = v),
           ),
 
           const SizedBox(height: 16),
@@ -720,7 +731,7 @@ class _ConfirmSheetState extends State<_ConfirmSheet> {
                 : () async {
                     setState(() => _saving = true);
                     Navigator.pop(context);
-                    await widget.onSave(_labelCtrl.text.trim());
+                    await widget.onSave(_labelCtrl.text.trim(), _isPublic);
                   },
             child: _saving
                 ? const SizedBox(
@@ -1016,6 +1027,116 @@ class _GuestSaveSheet extends StatelessWidget {
             child: const Text('Continue without saving'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Public / private toggle
+// ---------------------------------------------------------------------------
+class _PublicToggle extends StatelessWidget {
+  final bool value;
+  final QrCodeType type;
+  final ValueChanged<bool> onChanged;
+
+  const _PublicToggle({
+    required this.value,
+    required this.type,
+    required this.onChanged,
+  });
+
+  Future<void> _handleTap(BuildContext context) async {
+    final next = !value;
+    if (next && isSensitiveType(type)) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Make public?'),
+          content: Text(sensitiveWarning(type)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Keep Private'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: TextButton.styleFrom(foregroundColor: AppTheme.danger),
+              child: const Text('Make Public'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed == true) onChanged(true);
+    } else {
+      onChanged(next);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _handleTap(context),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: value
+              ? AppTheme.primary.withValues(alpha: 0.06)
+              : Theme.of(context).colorScheme.surfaceContainerLow,
+          border: Border.all(
+            color: value
+                ? AppTheme.primary.withValues(alpha: 0.25)
+                : Theme.of(context).colorScheme.outlineVariant,
+          ),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              value ? Icons.public_rounded : Icons.lock_outline_rounded,
+              size: 18,
+              color: value ? AppTheme.primary : AppTheme.textSecondary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value ? 'Public' : 'Private',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: value
+                          ? AppTheme.primary
+                          : Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  Text(
+                    value
+                        ? 'Visible to others nearby'
+                        : 'Only visible to you',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppTheme.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Switch(
+              value: value,
+              onChanged: (v) {
+                if (v && isSensitiveType(type)) {
+                  _handleTap(context);
+                } else {
+                  onChanged(v);
+                }
+              },
+              activeThumbColor: AppTheme.primary,
+            ),
+          ],
+        ),
       ),
     );
   }

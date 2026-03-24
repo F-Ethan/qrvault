@@ -29,7 +29,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>QRVault needs camera access to scan QR codes.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>QRVault uses your location to show QR codes you have scaned in your location. </string>
+	<string>QRVault uses your location to show nearby QR codes and discover public codes from others in your area.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
