@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/settings_providers.dart';
 
@@ -509,6 +510,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 icon: Icons.logout_rounded,
                 label: 'Sign Out',
                 onTap: _signOut,
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 24),
+
+          // ── More from developer ───────────────────────────────────────────
+          _SectionHeader('Our Other Apps'),
+          _SettingsCard(
+            children: [
+              _ActionRow(
+                icon: Icons.menu_book_rounded,
+                label: 'Bookmark: Horner Bible Reading',
+                onTap: () => launchUrl(
+                  Uri.parse(
+                      'https://apps.apple.com/us/app/bookmark-horner-bible-reading/id6761035698'),
+                  mode: LaunchMode.externalApplication,
+                ),
               ),
             ],
           ),
