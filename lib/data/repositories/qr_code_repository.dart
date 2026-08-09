@@ -1,5 +1,21 @@
+import 'dart:math' as math;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/qr_code_model.dart';
+
+// Haversine formula — distance in km between two lat/lng points. Shared by
+// the repository (radius filtering) and the UI (nearby-first sorting).
+double haversineKm(double lat1, double lon1, double lat2, double lon2) {
+  const r = 6371.0; // Earth radius in km
+  final dLat = _toRad(lat2 - lat1);
+  final dLon = _toRad(lon2 - lon1);
+  final sinDLat = math.sin(dLat / 2);
+  final sinDLon = math.sin(dLon / 2);
+  final a = sinDLat * sinDLat +
+      math.cos(_toRad(lat1)) * math.cos(_toRad(lat2)) * sinDLon * sinDLon;
+  return r * 2 * math.asin(math.sqrt(a));
+}
+
+double _toRad(double deg) => deg * math.pi / 180;
 
 // -- Abstract interface --
 // Every method goes through this contract. If we ever add a local
@@ -39,7 +55,7 @@ abstract class QrCodeRepository {
   Future<List<QrCodeModel>> getNearby(double lat, double lng, double radiusKm);
   Future<List<QrCodeModel>> getPublicNearby(
       double lat, double lng, double radiusKm);
-  Future<List<QrCodeModel>> getPublicCodes();
+  Future<List<QrCodeModel>> getAllPublic();
 }
 
 // -- Supabase implementation --
@@ -133,18 +149,8 @@ class SupabaseQrCodeRepository implements QrCodeRepository {
       final qrLat = qr.lastScannedLat ?? qr.firstScannedLat;
       final qrLng = qr.lastScannedLng ?? qr.firstScannedLng;
       if (qrLat == null || qrLng == null) return false;
-      return _haversineKm(lat, lng, qrLat, qrLng) <= radiusKm;
+      return haversineKm(lat, lng, qrLat, qrLng) <= radiusKm;
     }).toList();
-  }
-
-  @override
-  Future<List<QrCodeModel>> getPublicCodes() async {
-    final response = await _client
-        .from(_table)
-        .select()
-        .eq('is_public', true)
-        .order('scan_count', ascending: false);
-    return (response as List).map((e) => QrCodeModel.fromJson(e)).toList();
   }
 
   @override
@@ -163,31 +169,19 @@ class SupabaseQrCodeRepository implements QrCodeRepository {
       final qrLat = qr.lastScannedLat ?? qr.firstScannedLat;
       final qrLng = qr.lastScannedLng ?? qr.firstScannedLng;
       if (qrLat == null || qrLng == null) return false;
-      return _haversineKm(lat, lng, qrLat, qrLng) <= radiusKm;
+      return haversineKm(lat, lng, qrLat, qrLng) <= radiusKm;
     }).toList();
   }
 
-  // Haversine formula — calculates distance in km between two lat/lng points
-  double _haversineKm(double lat1, double lon1, double lat2, double lon2) {
-    const r = 6371.0; // Earth radius in km
-    final dLat = _toRad(lat2 - lat1);
-    final dLon = _toRad(lon2 - lon1);
-    final a = _sin2(dLat / 2) +
-        _cos(_toRad(lat1)) * _cos(_toRad(lat2)) * _sin2(dLon / 2);
-    return r * 2 * _asin(_sqrt(a));
-  }
-
-  double _toRad(double deg) => deg * 3.141592653589793 / 180;
-  double _sin2(double x) => _sin(x) * _sin(x);
-  double _sin(double x) => x - x * x * x / 6 + x * x * x * x * x / 120;
-  double _cos(double x) => 1 - x * x / 2 + x * x * x * x / 24;
-  double _asin(double x) => x + x * x * x / 6;
-  double _sqrt(double x) {
-    if (x <= 0) return 0;
-    double r = x;
-    for (int i = 0; i < 20; i++) {
-      r = (r + x / r) / 2;
-    }
-    return r;
+  @override
+  Future<List<QrCodeModel>> getAllPublic() async {
+    // Unrestricted by location — used for text search across all public
+    // codes, and for browsing when the user turns off "Local only".
+    final response = await _client
+        .from(_table)
+        .select()
+        .eq('is_public', true)
+        .order('scan_count', ascending: false);
+    return (response as List).map((e) => QrCodeModel.fromJson(e)).toList();
   }
 }

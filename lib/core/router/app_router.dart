@@ -8,6 +8,8 @@ import '../../core/theme/app_theme.dart';
 // Screen imports — uncomment each one as you build it
 import '../../screens/auth/sign_in_screen.dart';
 import '../../screens/auth/sign_up_screen.dart';
+import '../../screens/auth/forgot_password_screen.dart';
+import '../../screens/auth/reset_password_screen.dart';
 import '../../screens/home/home_screen.dart';
 import '../../screens/library/library_screen.dart';
 import '../../screens/create/create_screen.dart';
@@ -18,6 +20,7 @@ import '../../screens/mycards/my_cards_screen.dart';
 import '../../screens/onboarding/onboarding_screen.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../providers/settings_providers.dart';
+import '../../providers/auth_providers.dart';
 
 // Notifies GoRouter whenever Supabase auth state changes so the redirect
 // guard re-evaluates immediately (sign-in → home, sign-out → sign-in).
@@ -27,8 +30,11 @@ import '../../providers/settings_providers.dart';
 // a dialog). Calling it synchronously inside a navigation callback causes
 // the '!_debugLocked' assertion in Navigator.push.
 class _AuthNotifier extends ChangeNotifier {
-  _AuthNotifier() {
-    _sub = Supabase.instance.client.auth.onAuthStateChange.listen((_) {
+  _AuthNotifier(Ref ref) {
+    _sub = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      if (data.event == AuthChangeEvent.passwordRecovery) {
+        ref.read(passwordRecoveryProvider.notifier).set(true);
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (hasListeners) notifyListeners();
       });
@@ -45,7 +51,7 @@ class _AuthNotifier extends ChangeNotifier {
 }
 
 final appRouterProvider = Provider<GoRouter>((ref) {
-  final authNotifier = _AuthNotifier();
+  final authNotifier = _AuthNotifier(ref);
   ref.onDispose(authNotifier.dispose);
 
   return GoRouter(
@@ -56,9 +62,23 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       final isSignedIn = session != null;
       final isGuest = ref.read(guestModeProvider);
       final isOnAuthRoute = state.matchedLocation == '/sign-in' ||
-          state.matchedLocation == '/sign-up';
+          state.matchedLocation == '/sign-up' ||
+          state.matchedLocation == '/forgot-password';
       final isOnOnboarding = state.matchedLocation == '/onboarding';
       final hasSeenOnboarding = ref.read(hasSeenOnboardingProvider);
+
+      // A password-recovery link creates a valid session, but the user must
+      // set a new password before doing anything else in the app.
+      if (ref.read(passwordRecoveryProvider)) {
+        if (state.matchedLocation != '/reset-password') {
+          return '/reset-password';
+        }
+        return null;
+      }
+      if (state.matchedLocation == '/reset-password') {
+        // Reached directly without a recovery session — bounce to sign-in.
+        return '/sign-in';
+      }
 
       // Signed-in users always go to home; clear guest flag if just signed in
       if (isSignedIn) {
@@ -92,6 +112,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/sign-up',
         builder: (context, state) => const SignUpScreen(),
+      ),
+      GoRoute(
+        path: '/forgot-password',
+        builder: (context, state) => const ForgotPasswordScreen(),
+      ),
+      GoRoute(
+        path: '/reset-password',
+        builder: (context, state) => const ResetPasswordScreen(),
       ),
 
       // Create QR flow — full-screen, no shell chrome
@@ -311,13 +339,16 @@ class _NavItem extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(isActive ? activeIcon : icon, color: color, size: 22),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight:
-                    isActive ? FontWeight.w600 : FontWeight.w400,
-                color: color,
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight:
+                      isActive ? FontWeight.w600 : FontWeight.w400,
+                  color: color,
+                ),
               ),
             ),
           ],

@@ -139,6 +139,15 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                     },
                   ),
 
+                  // Forgot password link
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () => context.push('/forgot-password'),
+                      child: const Text('Forgot password?'),
+                    ),
+                  ),
+
                   // Error message
                   if (_errorMessage != null) ...[
                     const SizedBox(height: 16),

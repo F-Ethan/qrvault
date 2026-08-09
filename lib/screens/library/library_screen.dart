@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../data/models/qr_code_model.dart';
+import '../../data/repositories/qr_code_repository.dart' show haversineKm;
 import '../../providers/qr_code_providers.dart';
+import '../../providers/settings_providers.dart';
 
 // ---------------------------------------------------------------------------
 // Filter enum — "all" + one value per QrCodeType
@@ -28,7 +31,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   _Filter _activeFilter = _Filter.all;
   String _searchQuery = '';
   bool _showAllCodes = false; // false = My Codes, true = All Public
+  bool _localOnly = true; // when true, "All Public" is restricted to radius
   late final TextEditingController _searchController;
+
+  // Public codes are only ever shown within the user's nearby radius by
+  // default — location is fetched lazily, the first time "All Public" is
+  // selected. Searching always widens to every public code (see build()).
+  Position? _userPosition;
+  bool _locationLoading = false;
+  bool _locationDenied = false;
+  bool _locationError = false;
 
   @override
   void initState() {
@@ -40,6 +52,80 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _fetchPosition() async {
+    setState(() {
+      _locationLoading = true;
+      _locationDenied = false;
+      _locationError = false;
+    });
+
+    try {
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          setState(() {
+            _locationDenied = true;
+            _locationLoading = false;
+          });
+        }
+        return;
+      }
+
+      Position? position = await Geolocator.getLastKnownPosition();
+      position ??= await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.medium,
+          timeLimit: Duration(seconds: 20),
+        ),
+      );
+
+      if (mounted) {
+        setState(() {
+          _userPosition = position;
+          _locationLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _userPosition = null;
+          _locationLoading = false;
+          _locationError = true;
+        });
+      }
+    }
+  }
+
+  // Orders public codes closest-first. Codes without location data (or when
+  // the user's own position isn't known) sort last, by scan count.
+  List<QrCodeModel> _sortNearbyFirst(List<QrCodeModel> codes) {
+    final position = _userPosition;
+    if (position == null) return codes;
+
+    double? distanceKm(QrCodeModel c) {
+      final lat = c.lastScannedLat ?? c.firstScannedLat;
+      final lng = c.lastScannedLng ?? c.firstScannedLng;
+      if (lat == null || lng == null) return null;
+      return haversineKm(position.latitude, position.longitude, lat, lng);
+    }
+
+    final sorted = [...codes];
+    sorted.sort((a, b) {
+      final da = distanceKm(a);
+      final db = distanceKm(b);
+      if (da == null && db == null) return b.scanCount.compareTo(a.scanCount);
+      if (da == null) return 1;
+      if (db == null) return -1;
+      return da.compareTo(db);
+    });
+    return sorted;
   }
 
   List<QrCodeModel> _applyFilters(List<QrCodeModel> all) {
@@ -73,11 +159,44 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   @override
   Widget build(BuildContext context) {
     final myCodesAsync = ref.watch(qrCodesProvider);
-    final publicCodesAsync = _showAllCodes ? ref.watch(publicCodesProvider) : null;
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
 
-    // Pick the right source list.
-    final sourceAsync = _showAllCodes ? publicCodesAsync! : myCodesAsync;
+    // Searching always widens to every public code, regardless of the
+    // "Local only" toggle — you should be able to find a specific code
+    // even if it's not near you.
+    final searchingPublic = _showAllCodes && _searchQuery.isNotEmpty;
+    final restrictedToNearby = _showAllCodes && _localOnly && !searchingPublic;
+
+    // Only the radius-restricted view actually requires location.
+    if (restrictedToNearby && (_locationDenied || _locationError)) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Library')),
+        body: _LocationRequired(
+          isError: _locationError,
+          onRetry: _fetchPosition,
+        ),
+      );
+    }
+
+    final AsyncValue<List<QrCodeModel>> sourceAsync;
+    if (_showAllCodes) {
+      if (restrictedToNearby) {
+        if (_userPosition == null) {
+          sourceAsync = const AsyncValue.loading();
+        } else {
+          final radiusKm = ref.watch(nearbyRadiusProvider) * 1.60934;
+          sourceAsync = ref.watch(nearbyPublicProvider((
+            lat: _userPosition!.latitude,
+            lng: _userPosition!.longitude,
+            radiusKm: radiusKm,
+          )));
+        }
+      } else {
+        sourceAsync = ref.watch(allPublicProvider);
+      }
+    } else {
+      sourceAsync = myCodesAsync;
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('Library')),
@@ -88,12 +207,24 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               style: const TextStyle(color: AppTheme.danger)),
         ),
         data: (codes) {
-          final filtered = _applyFilters(codes);
+          final ordered = _showAllCodes ? _sortNearbyFirst(codes) : codes;
+          final filtered = _applyFilters(ordered);
 
           return RefreshIndicator(
             onRefresh: () async {
               if (_showAllCodes) {
-                ref.invalidate(publicCodesProvider);
+                if (restrictedToNearby && _userPosition != null) {
+                  final radiusKm = ref.read(nearbyRadiusProvider) * 1.60934;
+                  ref.invalidate(nearbyPublicProvider((
+                    lat: _userPosition!.latitude,
+                    lng: _userPosition!.longitude,
+                    radiusKm: radiusKm,
+                  )));
+                } else if (_userPosition == null) {
+                  await _fetchPosition();
+                } else {
+                  ref.invalidate(allPublicProvider);
+                }
               } else {
                 await ref.read(qrCodesProvider.notifier).refresh();
               }
@@ -147,15 +278,56 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                         ),
                       ],
                       selected: {_showAllCodes},
-                      onSelectionChanged: (s) => setState(() {
-                        _showAllCodes = s.first;
-                        _activeFilter = _Filter.all;
-                        _searchQuery = '';
-                        _searchController.clear();
-                      }),
+                      onSelectionChanged: (s) {
+                        setState(() {
+                          _showAllCodes = s.first;
+                          _activeFilter = _Filter.all;
+                          _searchQuery = '';
+                          _searchController.clear();
+                        });
+                        if (_showAllCodes &&
+                            _userPosition == null &&
+                            !_locationLoading &&
+                            !_locationDenied) {
+                          _fetchPosition();
+                        }
+                      },
                     ),
                   ),
                 ),
+
+                // ── Local only toggle (All Public mode) ─────────────────────
+                if (_showAllCodes)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.near_me_outlined,
+                              size: 16, color: AppTheme.textSecondary),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Local only',
+                              style: Theme.of(context).textTheme.bodyMedium,
+                            ),
+                          ),
+                          Switch(
+                            value: _localOnly,
+                            onChanged: (v) {
+                              setState(() => _localOnly = v);
+                              if (v &&
+                                  _userPosition == null &&
+                                  !_locationLoading &&
+                                  !_locationDenied) {
+                                _fetchPosition();
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
 
                 // ── Filter chips ────────────────────────────────────────────
                 SliverToBoxAdapter(
@@ -251,6 +423,49 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shown instead of the grid when "All Public" needs location access —
+// public codes are only ever surfaced within the user's nearby radius.
+// ---------------------------------------------------------------------------
+class _LocationRequired extends StatelessWidget {
+  final bool isError;
+  final VoidCallback onRetry;
+
+  const _LocationRequired({required this.isError, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              isError ? Icons.error_outline_rounded : Icons.location_off_outlined,
+              size: 40,
+              color: AppTheme.textSecondary,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isError
+                  ? "Couldn't get your location. Try again."
+                  : 'Enable location to see public codes near you',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed: onRetry,
+              child: const Text('Enable Location'),
+            ),
+          ],
+        ),
       ),
     );
   }

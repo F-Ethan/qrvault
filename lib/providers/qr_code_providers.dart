@@ -32,10 +32,11 @@ final nearbyPublicProvider = FutureProvider.autoDispose
       .getPublicNearby(params.lat, params.lng, params.radiusKm),
 );
 
-// -- All public codes — used by Library "All" mode.
-final publicCodesProvider =
+// -- All public codes, unrestricted by location — powers search across all
+// public codes and "All Public" browsing when "Local only" is off.
+final allPublicProvider =
     FutureProvider.autoDispose<List<QrCodeModel>>((ref) {
-  return ref.read(qrCodeRepositoryProvider).getPublicCodes();
+  return ref.read(qrCodeRepositoryProvider).getAllPublic();
 });
 
 // -- Single code by ID — checks user's list first, then fetches from DB.

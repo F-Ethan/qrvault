@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/settings_providers.dart';
 
@@ -41,12 +42,23 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
     });
 
     try {
-      await Supabase.instance.client.auth.signUp(
+      final response = await Supabase.instance.client.auth.signUp(
         email: _emailController.text.trim(),
         password: _passwordController.text,
+        emailRedirectTo: AppConstants.authRedirectUrl,
       );
-      // Show confirmation message — Supabase sends a verification email
-      if (mounted) setState(() => _signUpComplete = true);
+      // Supabase returns a "successful" response with no error even when the
+      // email is already registered (to avoid leaking which emails exist) —
+      // the tell is an empty identities list on the returned user.
+      if (response.user?.identities?.isEmpty ?? false) {
+        setState(() {
+          _errorMessage =
+              'An account with this email already exists. Try signing in, '
+              'or use "Forgot password?" if you need to reset it.';
+        });
+      } else if (mounted) {
+        setState(() => _signUpComplete = true);
+      }
     } on AuthException catch (e) {
       setState(() => _errorMessage = e.message);
     } catch (_) {
