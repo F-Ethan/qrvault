@@ -2,10 +2,8 @@ import 'dart:math' as math;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/qr_code_model.dart';
 
-// Haversine formula — distance in km between two lat/lng points. Shared by
-// the repository (radius filtering) and the UI (nearby-first sorting).
 double haversineKm(double lat1, double lon1, double lat2, double lon2) {
-  const r = 6371.0; // Earth radius in km
+  const r = 6371.0;
   final dLat = _toRad(lat2 - lat1);
   final dLon = _toRad(lon2 - lon1);
   final sinDLat = math.sin(dLat / 2);
@@ -17,15 +15,9 @@ double haversineKm(double lat1, double lon1, double lat2, double lon2) {
 
 double _toRad(double deg) => deg * math.pi / 180;
 
-// -- Abstract interface --
-// Every method goes through this contract. If we ever add a local
-// cache or swap backends, we just write a new class implementing this.
-// Default public visibility by type — url/email are public, others private.
 bool defaultIsPublic(QrCodeType type) =>
     type == QrCodeType.url || type == QrCodeType.email;
 
-// Types that contain potentially sensitive data and warrant a warning
-// when the user tries to make them public.
 const sensitiveTypes = {
   QrCodeType.wifi,
   QrCodeType.contact,
@@ -44,52 +36,88 @@ String sensitiveWarning(QrCodeType type) => switch (type) {
       _ => 'Are you sure you want to make this code visible to others nearby?',
     };
 
+class ScanRecordResult {
+  final QrCodeModel? code;
+  final bool isOwn;
+
+  const ScanRecordResult({this.code, this.isOwn = false});
+}
+
 abstract class QrCodeRepository {
   Future<List<QrCodeModel>> getAll();
   Future<QrCodeModel?> getById(String id);
   Future<QrCodeModel> save(QrCodeModel qrCode);
   Future<QrCodeModel> update(QrCodeModel qrCode);
   Future<void> delete(String id);
+  Future<void> removeMembership(String qrCodeId);
+  Future<QrCodeModel> upsertMembership({
+    required String qrCodeId,
+    bool? isPinned,
+    String? customLabel,
+    bool incrementScan = false,
+  });
+  Future<ScanRecordResult> recordScan({
+    required String content,
+    double? lat,
+    double? lng,
+    String? place,
+    bool saveMembership = false,
+  });
+  Future<QrCodeModel?> findExisting(String content);
   Future<List<QrCodeModel>> filterByType(QrCodeType type);
   Future<List<QrCodeModel>> filterByPlace(String placeName);
   Future<List<QrCodeModel>> getNearby(double lat, double lng, double radiusKm);
   Future<List<QrCodeModel>> getPublicNearby(
       double lat, double lng, double radiusKm);
   Future<List<QrCodeModel>> getAllPublic();
+  Future<List<QrCodeNote>> listNotes(String qrCodeId);
+  Future<QrCodeNote> addNote(String qrCodeId, String body);
+  Future<void> deleteNote(String noteId);
 }
 
-// -- Supabase implementation --
 class SupabaseQrCodeRepository implements QrCodeRepository {
   final SupabaseClient _client;
   static const _table = 'qr_codes';
+  static const _memberships = 'qr_code_memberships';
+  static const _notes = 'qr_code_notes';
 
   SupabaseQrCodeRepository(this._client);
 
   String? get _uid => _client.auth.currentUser?.id;
 
-  /// Library / My Cards / home "my codes" — this user's rows only.
-  ///
-  /// Must filter by `user_id` in the query. A public-read RLS policy
-  /// (`is_public = true`) is OR'd with the owner policy, so an unfiltered
-  /// `select()` returns every public code in the table — including other
-  /// people's pinned cards.
-  PostgrestFilterBuilder<dynamic> _ownCodes() {
-    final uid = _uid;
-    if (uid == null) {
-      throw StateError('Not signed in');
-    }
-    return _client.from(_table).select().eq('user_id', uid);
+  List<QrCodeModel> _parseMembershipList(dynamic response) {
+    return (response as List)
+        .map((e) => QrCodeModel.fromJson(Map<String, dynamic>.from(e as Map)))
+        .where((c) => c.id.isNotEmpty)
+        .toList();
   }
 
-  List<QrCodeModel> _parseList(dynamic response) =>
-      (response as List).map((e) => QrCodeModel.fromJson(e)).toList();
+  Future<QrCodeModel> _mergeMembership(QrCodeModel code) async {
+    final uid = _uid;
+    if (uid == null) return code;
+    final mem = await _client
+        .from(_memberships)
+        .select()
+        .eq('user_id', uid)
+        .eq('qr_code_id', code.id)
+        .maybeSingle();
+    if (mem == null) return code;
+    return QrCodeModel.fromJson({
+      ...code.toJson(),
+      'membership': mem,
+    });
+  }
 
   @override
   Future<List<QrCodeModel>> getAll() async {
-    if (_uid == null) return [];
-    final response =
-        await _ownCodes().order('created_at', ascending: false);
-    return _parseList(response);
+    final uid = _uid;
+    if (uid == null) return [];
+    final response = await _client
+        .from(_memberships)
+        .select('custom_label, is_pinned, my_scan_count, qr_code_id, qr_codes(*)')
+        .eq('user_id', uid)
+        .order('updated_at', ascending: false);
+    return _parseMembershipList(response);
   }
 
   @override
@@ -100,7 +128,7 @@ class SupabaseQrCodeRepository implements QrCodeRepository {
         .eq('id', id)
         .maybeSingle();
     if (response == null) return null;
-    return QrCodeModel.fromJson(response);
+    return _mergeMembership(QrCodeModel.fromJson(response));
   }
 
   @override
@@ -109,9 +137,6 @@ class SupabaseQrCodeRepository implements QrCodeRepository {
     if (uid == null) {
       throw StateError('Not signed in');
     }
-    // Remove id and updated_at — Supabase generates these on insert.
-    // Always stamp user_id from the session so a stale/copied model
-    // cannot insert under someone else's account.
     final payload = qrCode.toJson()
       ..remove('id')
       ..remove('updated_at')
@@ -121,7 +146,16 @@ class SupabaseQrCodeRepository implements QrCodeRepository {
         .insert(payload)
         .select()
         .single();
-    return QrCodeModel.fromJson(response);
+    final saved = QrCodeModel.fromJson(response);
+    await _client.from(_memberships).upsert({
+      'user_id': uid,
+      'qr_code_id': saved.id,
+      'is_pinned': qrCode.isPinned,
+      'my_scan_count': qrCode.myScanCount > 0 ? qrCode.myScanCount : 1,
+      'last_scanned_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+    return _mergeMembership(saved);
   }
 
   @override
@@ -130,9 +164,6 @@ class SupabaseQrCodeRepository implements QrCodeRepository {
     if (uid == null) {
       throw StateError('Not signed in');
     }
-    // Remove created_at — it should never change. Constrain to this
-    // user's row so a public SELECT policy cannot be used to mutate
-    // someone else's code (e.g. flipping is_pinned).
     final payload = qrCode.toJson()
       ..remove('created_at')
       ..['user_id'] = uid;
@@ -143,7 +174,7 @@ class SupabaseQrCodeRepository implements QrCodeRepository {
         .eq('user_id', uid)
         .select()
         .single();
-    return QrCodeModel.fromJson(response);
+    return _mergeMembership(QrCodeModel.fromJson(response));
   }
 
   @override
@@ -156,34 +187,130 @@ class SupabaseQrCodeRepository implements QrCodeRepository {
   }
 
   @override
+  Future<void> removeMembership(String qrCodeId) async {
+    final uid = _uid;
+    if (uid == null) {
+      throw StateError('Not signed in');
+    }
+    await _client
+        .from(_memberships)
+        .delete()
+        .eq('user_id', uid)
+        .eq('qr_code_id', qrCodeId);
+  }
+
+  @override
+  Future<QrCodeModel> upsertMembership({
+    required String qrCodeId,
+    bool? isPinned,
+    String? customLabel,
+    bool incrementScan = false,
+  }) async {
+    final uid = _uid;
+    if (uid == null) {
+      throw StateError('Not signed in');
+    }
+    final existing = await _client
+        .from(_memberships)
+        .select()
+        .eq('user_id', uid)
+        .eq('qr_code_id', qrCodeId)
+        .maybeSingle();
+    final nextCount = incrementScan
+        ? ((existing?['my_scan_count'] as int?) ?? 0) + 1
+        : (existing?['my_scan_count'] as int? ?? 0);
+    await _client.from(_memberships).upsert({
+      'user_id': uid,
+      'qr_code_id': qrCodeId,
+      'is_pinned': isPinned ?? existing?['is_pinned'] ?? false,
+      'custom_label': customLabel ?? existing?['custom_label'],
+      'my_scan_count': nextCount,
+      'last_scanned_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
+    });
+    final code = await getById(qrCodeId);
+    if (code == null) {
+      throw StateError('Code not found');
+    }
+    return code;
+  }
+
+  @override
+  Future<ScanRecordResult> recordScan({
+    required String content,
+    double? lat,
+    double? lng,
+    String? place,
+    bool saveMembership = false,
+  }) async {
+    final response = await _client.rpc('record_qr_scan', params: {
+      'p_content': content,
+      'p_lat': lat,
+      'p_lng': lng,
+      'p_place': place,
+      'p_save_membership': saveMembership,
+    });
+    if (response == null) return const ScanRecordResult();
+    final map = Map<String, dynamic>.from(response as Map);
+    final codeJson = map['code'];
+    if (codeJson == null) return const ScanRecordResult();
+    return ScanRecordResult(
+      code: QrCodeModel.fromScanRpc(map),
+      isOwn: map['is_own'] as bool? ?? false,
+    );
+  }
+
+  @override
+  Future<QrCodeModel?> findExisting(String content) async {
+    final uid = _uid;
+    if (uid != null) {
+      final own = await _client
+          .from(_table)
+          .select()
+          .eq('user_id', uid)
+          .eq('content', content)
+          .maybeSingle();
+      if (own != null) {
+        return _mergeMembership(QrCodeModel.fromJson(own));
+      }
+    }
+    final publicRows = await _client
+        .from(_table)
+        .select()
+        .eq('is_public', true)
+        .eq('content', content)
+        .order('public_scan_count', ascending: false)
+        .limit(1);
+    final list = publicRows as List;
+    if (list.isEmpty) return null;
+    return _mergeMembership(
+      QrCodeModel.fromJson(Map<String, dynamic>.from(list.first as Map)),
+    );
+  }
+
+  @override
   Future<List<QrCodeModel>> filterByType(QrCodeType type) async {
-    if (_uid == null) return [];
-    final response = await _ownCodes()
-        .eq('type', type.name)
-        .order('created_at', ascending: false);
-    return _parseList(response);
+    final all = await getAll();
+    return all.where((c) => c.type == type).toList();
   }
 
   @override
   Future<List<QrCodeModel>> filterByPlace(String placeName) async {
-    if (_uid == null) return [];
-    final response = await _ownCodes()
-        .or('first_scanned_place.ilike.%$placeName%,'
-            'last_scanned_place.ilike.%$placeName%')
-        .order('created_at', ascending: false);
-    return _parseList(response);
+    final q = placeName.toLowerCase();
+    final all = await getAll();
+    return all.where((c) {
+      return (c.firstScannedPlace ?? '').toLowerCase().contains(q) ||
+          (c.lastScannedPlace ?? '').toLowerCase().contains(q);
+    }).toList();
   }
 
   @override
   Future<List<QrCodeModel>> getNearby(
       double lat, double lng, double radiusKm) async {
-    // Pull all codes that have location data and filter in Dart.
-    // For a family-scale app this is perfectly fast; at larger scale
-    // we'd add a PostGIS extension and do this in SQL.
     final all = await getAll();
     return all.where((qr) {
-      final qrLat = qr.lastScannedLat ?? qr.firstScannedLat;
-      final qrLng = qr.lastScannedLng ?? qr.firstScannedLng;
+      final qrLat = qr.mapLat;
+      final qrLng = qr.mapLng;
       if (qrLat == null || qrLng == null) return false;
       return haversineKm(lat, lng, qrLat, qrLng) <= radiusKm;
     }).toList();
@@ -192,18 +319,12 @@ class SupabaseQrCodeRepository implements QrCodeRepository {
   @override
   Future<List<QrCodeModel>> getPublicNearby(
       double lat, double lng, double radiusKm) async {
-    // Fetch all public codes that have location data attached.
-    // RLS must allow SELECT where is_public = true (see migration SQL).
-    final response = await _client
-        .from(_table)
-        .select()
-        .eq('is_public', true)
-        .not('last_scanned_lat', 'is', null);
+    final response = await _client.from(_table).select().eq('is_public', true);
     final all =
         (response as List).map((e) => QrCodeModel.fromJson(e)).toList();
     return all.where((qr) {
-      final qrLat = qr.lastScannedLat ?? qr.firstScannedLat;
-      final qrLng = qr.lastScannedLng ?? qr.firstScannedLng;
+      final qrLat = qr.mapLat;
+      final qrLng = qr.mapLng;
       if (qrLat == null || qrLng == null) return false;
       return haversineKm(lat, lng, qrLat, qrLng) <= radiusKm;
     }).toList();
@@ -211,13 +332,50 @@ class SupabaseQrCodeRepository implements QrCodeRepository {
 
   @override
   Future<List<QrCodeModel>> getAllPublic() async {
-    // Unrestricted by location — used for text search across all public
-    // codes, and for browsing when the user turns off "Local only".
     final response = await _client
         .from(_table)
         .select()
         .eq('is_public', true)
-        .order('scan_count', ascending: false);
+        .order('public_scan_count', ascending: false);
     return (response as List).map((e) => QrCodeModel.fromJson(e)).toList();
+  }
+
+  @override
+  Future<List<QrCodeNote>> listNotes(String qrCodeId) async {
+    final response = await _client
+        .from(_notes)
+        .select()
+        .eq('qr_code_id', qrCodeId)
+        .order('created_at', ascending: false);
+    return (response as List)
+        .map((e) => QrCodeNote.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  @override
+  Future<QrCodeNote> addNote(String qrCodeId, String body) async {
+    final uid = _uid;
+    if (uid == null) {
+      throw StateError('Not signed in');
+    }
+    final response = await _client
+        .from(_notes)
+        .insert({
+          'qr_code_id': qrCodeId,
+          'user_id': uid,
+          'body': body.trim(),
+        })
+        .select()
+        .single();
+    return QrCodeNote.fromJson(response);
+  }
+
+  @override
+  Future<void> deleteNote(String noteId) async {
+    final uid = _uid;
+    if (uid == null) {
+      throw StateError('Not signed in');
+    }
+    await _client.from(_notes).delete().eq('id', noteId).eq('user_id', uid);
   }
 }

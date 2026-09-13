@@ -7,6 +7,11 @@ class AppConstants {
   static const String supabaseUrl = AppSecrets.supabaseUrl;
   static const String supabaseAnonKey = AppSecrets.supabaseAnonKey;
 
+  static const String mapboxAccessToken = String.fromEnvironment(
+    'MAPBOX_ACCESS_TOKEN',
+    defaultValue: AppSecrets.mapboxAccessToken,
+  );
+
   // Deep link used for email confirmation / password reset callbacks.
   // Must also be added to Supabase → Authentication → URL Configuration →
   // Redirect URLs, and registered as a URL scheme on iOS/Android.

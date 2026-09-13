@@ -121,7 +121,6 @@ class _ScanScreenState extends ConsumerState<ScanScreen>
           },
         ),
       ).whenComplete(() {
-        // Reset if user swiped the sheet away without pressing Scan Again.
         if (mounted && _detected) {
           setState(() => _detected = false);
           _controller.start();
@@ -130,28 +129,18 @@ class _ScanScreenState extends ConsumerState<ScanScreen>
       return;
     }
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      isDismissible: false,
-      enableDrag: false,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) => _ConfirmSheet(
-        raw: raw,
-        onScanAgain: () {
-          setState(() => _detected = false);
-          _controller.start();
-        },
-        onSave: (label, isPublic) => _saveCode(raw, label, isPublic),
-      ),
-    );
+    context.push('/scan/result', extra: raw).whenComplete(() {
+      if (mounted) {
+        setState(() => _detected = false);
+        _controller.start();
+      }
+    });
   }
 
   // ---------------------------------------------------------------------------
-  // Save
+  // Save (legacy sheet path unused; results page handles persist)
   // ---------------------------------------------------------------------------
+  // ignore: unused_element
   Future<void> _saveCode(String content, String label, bool isPublic) async {
     // Guests cannot save — show sign-up prompt instead
     if (ref.read(guestModeProvider)) {

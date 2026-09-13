@@ -139,7 +139,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       final q = _searchQuery.toLowerCase();
       result = result
           .where((c) =>
-              c.label.toLowerCase().contains(q) ||
+              c.displayLabel.toLowerCase().contains(q) ||
               c.content.toLowerCase().contains(q))
           .toList();
     }
@@ -533,7 +533,7 @@ class _LibraryCard extends StatelessWidget {
 
             // Label
             Text(
-              code.label,
+              code.displayLabel,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
