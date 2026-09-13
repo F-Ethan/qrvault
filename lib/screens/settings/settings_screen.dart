@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_theme.dart';
+import '../../providers/qr_code_providers.dart';
 import '../../providers/settings_providers.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -120,6 +121,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
     if (confirm != true) return;
     await Supabase.instance.client.auth.signOut();
+    ref.invalidate(qrCodesProvider);
     // GoRouter's refreshListenable detects the auth change and redirects
     // to /sign-in automatically — no explicit navigation needed here.
   }
@@ -136,6 +138,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       // Sign the user out — actual server-side deletion requires an Edge Function.
       // The account can be cleaned up server-side via a scheduled job.
       await Supabase.instance.client.auth.signOut();
+      ref.invalidate(qrCodesProvider);
       // GoRouter's refreshListenable handles the redirect to /sign-in.
     } catch (_) {
       if (mounted) _showError('Could not delete account. Please try again.');
