@@ -101,7 +101,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   // Initialise editable fields from loaded code — runs once only.
   void _initFromCode(QrCodeModel code) {
     if (_initialized) return;
-    _labelCtrl.text = code.label;
+    _labelCtrl.text = code.displayLabel;
     _fgColor = _hexToColor(code.foregroundColor);
     _bgColor = _hexToColor(code.backgroundColor);
     _initialized = true;
@@ -109,7 +109,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
   void _cancelEdit(QrCodeModel code) {
     setState(() {
-      _labelCtrl.text = code.label;
+      _labelCtrl.text = code.displayLabel;
       _fgColor = _hexToColor(code.foregroundColor);
       _bgColor = _hexToColor(code.backgroundColor);
       _isEditing = false;
@@ -120,13 +120,21 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     setState(() => _saving = true);
     try {
       final label = _labelCtrl.text.trim();
-      await ref.read(qrCodesProvider.notifier).updateCode(
-            code.copyWith(
-              label: label.isNotEmpty ? label : code.label,
-              foregroundColor: _colorToHex(_fgColor),
-              backgroundColor: _colorToHex(_bgColor),
-            ),
-          );
+      final isOwner =
+          code.userId == Supabase.instance.client.auth.currentUser?.id;
+      if (isOwner) {
+        await ref.read(qrCodesProvider.notifier).updateCode(
+              code.copyWith(
+                label: label.isNotEmpty ? label : code.label,
+                foregroundColor: _colorToHex(_fgColor),
+                backgroundColor: _colorToHex(_bgColor),
+              ),
+            );
+      } else {
+        await ref
+            .read(qrCodesProvider.notifier)
+            .saveNickname(code, label);
+      }
       if (mounted) setState(() => _isEditing = false);
     } catch (e) {
       if (mounted) {
@@ -143,14 +151,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   }
 
   Future<void> _togglePin(QrCodeModel code) async {
-    await ref.read(qrCodesProvider.notifier).updateCode(
-          code.copyWith(isPinned: !code.isPinned),
-        );
+    final updated = await ref.read(qrCodesProvider.notifier).togglePin(code);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            code.isPinned ? 'Removed from My Cards' : 'Added to My Cards',
+            updated.isPinned ? 'Added to My Cards' : 'Removed from My Cards',
           ),
           duration: const Duration(seconds: 2),
         ),
@@ -282,7 +288,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         return Scaffold(
           appBar: AppBar(
             title: Text(
-              _isEditing ? 'Edit code' : code.label,
+              _isEditing ? 'Edit code' : code.displayLabel,
               overflow: TextOverflow.ellipsis,
             ),
             actions: _isEditing
@@ -317,7 +323,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       onPressed: () => _shareQr(code),
                       tooltip: 'Share',
                     ),
-                    if (isOwner) ...[
+                    if (currentUserId != null)
                       IconButton(
                         icon: Icon(
                           code.isPinned
@@ -330,11 +336,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                             ? 'Remove from My Cards'
                             : 'Add to My Cards',
                       ),
+                    if (currentUserId != null)
                       IconButton(
                         icon: const Icon(Icons.edit_outlined),
                         onPressed: () => setState(() => _isEditing = true),
-                        tooltip: 'Edit',
+                        tooltip: isOwner ? 'Edit' : 'Nickname',
                       ),
+                    if (isOwner)
                       IconButton(
                         icon: const Icon(
                           Icons.delete_outline_rounded,
@@ -343,7 +351,6 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                         onPressed: () => _deleteCode(code),
                         tooltip: 'Delete',
                       ),
-                    ],
                   ],
           ),
           body: SingleChildScrollView(
@@ -362,8 +369,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 const SizedBox(height: 24),
 
                 // ── Edit section: label + colours ────────────────────────────
-                if (isOwner && _isEditing) ...[
-                  _buildEditSection(code),
+                if (_isEditing) ...[
+                  _buildEditSection(code, isOwner: isOwner),
                   const SizedBox(height: 24),
                 ],
 
@@ -378,7 +385,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                   const SizedBox(height: 24),
                 ],
 
-                // ── Delete (owner only) ──────────────────────────────────────
+                _NotesSection(codeId: code.id),
+
+                const SizedBox(height: 24),
+
                 if (isOwner && !_isEditing)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -392,6 +402,29 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                         foregroundColor: AppTheme.danger,
                         side: BorderSide(
                             color: AppTheme.danger.withValues(alpha: 0.4)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  )
+                else if (!isOwner &&
+                    currentUserId != null &&
+                    code.hasMembership &&
+                    !_isEditing)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        await ref
+                            .read(qrCodesProvider.notifier)
+                            .removeFromLibrary(code.id);
+                        if (context.mounted) context.pop();
+                      },
+                      icon: const Icon(Icons.bookmark_remove_outlined),
+                      label: const Text('Remove from library'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 52),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -666,59 +699,59 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   // ---------------------------------------------------------------------------
   // Edit section — label field + colour pickers
   // ---------------------------------------------------------------------------
-  Widget _buildEditSection(QrCodeModel code) {
+  Widget _buildEditSection(QrCodeModel code, {required bool isOwner}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionHeader('EDIT'),
+        _SectionHeader(isOwner ? 'EDIT' : 'MY NICKNAME'),
         _InfoCard(children: [
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: TextField(
               controller: _labelCtrl,
               textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                labelText: 'Label',
-                prefixIcon: Icon(Icons.label_outline_rounded),
+              decoration: InputDecoration(
+                labelText: isOwner ? 'Label' : 'Nickname (only you see this)',
+                prefixIcon: const Icon(Icons.label_outline_rounded),
               ),
             ),
           ),
-          // Foreground colour row
-          Padding(
-            padding: const EdgeInsets.fromLTRB(0, 4, 0, 12),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 90,
-                  child: Text('QR code',
-                      style: Theme.of(context).textTheme.bodyMedium),
-                ),
-                ..._fgPresets.map((c) => _ColourCircle(
-                      color: c,
-                      isSelected: _fgColor == c,
-                      onTap: () => setState(() => _fgColor = c),
-                    )),
-              ],
+          if (isOwner) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(0, 4, 0, 12),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 90,
+                    child: Text('QR code',
+                        style: Theme.of(context).textTheme.bodyMedium),
+                  ),
+                  ..._fgPresets.map((c) => _ColourCircle(
+                        color: c,
+                        isSelected: _fgColor == c,
+                        onTap: () => setState(() => _fgColor = c),
+                      )),
+                ],
+              ),
             ),
-          ),
-          // Background colour row
-          Padding(
-            padding: const EdgeInsets.fromLTRB(0, 4, 0, 12),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 90,
-                  child: Text('Background',
-                      style: Theme.of(context).textTheme.bodyMedium),
-                ),
-                ..._bgPresets.map((c) => _ColourCircle(
-                      color: c,
-                      isSelected: _bgColor == c,
-                      onTap: () => setState(() => _bgColor = c),
-                    )),
-              ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(0, 4, 0, 12),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 90,
+                    child: Text('Background',
+                        style: Theme.of(context).textTheme.bodyMedium),
+                  ),
+                  ..._bgPresets.map((c) => _ColourCircle(
+                        color: c,
+                        isSelected: _bgColor == c,
+                        onTap: () => setState(() => _bgColor = c),
+                      )),
+                ],
+              ),
             ),
-          ),
+          ],
         ]),
       ],
     );
@@ -743,8 +776,8 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
         _InfoCard(children: [
           _InfoRow(
             label: 'Label',
-            value: code.label,
-            trailing: isOwner && !_isEditing
+            value: code.displayLabel,
+            trailing: !_isEditing
                 ? GestureDetector(
                     onTap: () => setState(() => _isEditing = true),
                     child: const Icon(Icons.edit_outlined,
@@ -758,10 +791,12 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             value: code.source == QrCodeSource.scanned ? 'Scanned' : 'Created',
           ),
           _InfoRow(
-            label: 'Scans',
-            value: code.scanCount == 0
-                ? 'Never scanned'
-                : '${code.scanCount} time${code.scanCount == 1 ? '' : 's'}',
+            label: 'Community scans',
+            value: '${code.publicScanCount}',
+          ),
+          _InfoRow(
+            label: 'My scans',
+            value: '${code.myScanCount}',
           ),
           _InfoRow(label: 'Created', value: _fmt(code.createdAt)),
           if (isOwner)
@@ -1163,6 +1198,128 @@ class _ColourCircle extends StatelessWidget {
               : null,
         ),
       ),
+    );
+  }
+}
+
+class _NotesSection extends ConsumerStatefulWidget {
+  final String codeId;
+  const _NotesSection({required this.codeId});
+
+  @override
+  ConsumerState<_NotesSection> createState() => _NotesSectionState();
+}
+
+class _NotesSectionState extends ConsumerState<_NotesSection> {
+  final _ctrl = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final body = _ctrl.text.trim();
+    if (body.isEmpty) return;
+    setState(() => _saving = true);
+    try {
+      await ref.read(qrCodeRepositoryProvider).addNote(widget.codeId, body);
+      _ctrl.clear();
+      ref.invalidate(notesProvider(widget.codeId));
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not add note')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final notesAsync = ref.watch(notesProvider(widget.codeId));
+    final uid = Supabase.instance.client.auth.currentUser?.id;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionHeader('NOTES'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            children: [
+              if (uid != null)
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _ctrl,
+                        maxLength: 500,
+                        minLines: 1,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          hintText: 'Add a public note…',
+                          counterText: '',
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _saving ? null : _submit,
+                      icon: const Icon(Icons.send_rounded),
+                      color: AppTheme.primary,
+                    ),
+                  ],
+                ),
+              const SizedBox(height: 8),
+              notesAsync.when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                error: (e, _) => Text('Could not load notes: $e'),
+                data: (notes) {
+                  if (notes.isEmpty) {
+                    return Text(
+                      'No notes yet. Share a tip for others.',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    );
+                  }
+                  return Column(
+                    children: notes
+                        .map(
+                          (n) => ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(n.body),
+                            subtitle: Text(_fmt(n.createdAt)),
+                            trailing: n.userId == uid
+                                ? IconButton(
+                                    icon: const Icon(
+                                      Icons.delete_outline,
+                                      color: AppTheme.danger,
+                                    ),
+                                    onPressed: () async {
+                                      await ref
+                                          .read(qrCodeRepositoryProvider)
+                                          .deleteNote(n.id);
+                                      ref.invalidate(
+                                          notesProvider(widget.codeId));
+                                    },
+                                  )
+                                : null,
+                          ),
+                        )
+                        .toList(),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

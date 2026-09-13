@@ -41,7 +41,8 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
-      // Router's redirect will automatically navigate to home on success
+      ref.read(guestModeProvider.notifier).setGuest(false);
+      if (mounted) context.go('/');
     } on AuthException catch (e) {
       setState(() => _errorMessage = e.message);
     } catch (_) {

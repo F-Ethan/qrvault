@@ -113,8 +113,8 @@ Enable Row Level Security (RLS). Owner writes and Library/My Cards must be
 OR `is_public` into the owner policy, or an unfiltered `select()` will return
 other people's codes (including their pinned cards).
 
-See `supabase/fix_qr_codes_rls.sql` for the full script to paste into the
-Supabase SQL editor (drops existing `qr_codes` policies and recreates them).
+See `supabase/fix_qr_codes_rls.sql` and `supabase/scan_match_notes.sql` for
+scripts to paste into the Supabase SQL editor.
 
 ```sql
 -- Owner access (Library, My Cards, create/update/delete)

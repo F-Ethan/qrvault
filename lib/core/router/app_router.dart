@@ -11,9 +11,11 @@ import '../../screens/auth/sign_up_screen.dart';
 import '../../screens/auth/forgot_password_screen.dart';
 import '../../screens/auth/reset_password_screen.dart';
 import '../../screens/home/home_screen.dart';
+import '../../screens/home/map_screen.dart';
 import '../../screens/library/library_screen.dart';
 import '../../screens/create/create_screen.dart';
 import '../../screens/scan/scan_screen.dart';
+import '../../screens/scan/scan_result_screen.dart';
 import '../../screens/settings/settings_screen.dart';
 import '../../screens/detail/detail_screen.dart';
 import '../../screens/mycards/my_cards_screen.dart';
@@ -35,13 +37,17 @@ class _AuthNotifier extends ChangeNotifier {
       if (data.event == AuthChangeEvent.passwordRecovery) {
         ref.read(passwordRecoveryProvider.notifier).set(true);
       }
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (hasListeners) notifyListeners();
-      });
+      refresh();
     });
   }
 
   late final StreamSubscription<AuthState> _sub;
+
+  void refresh() {
+    Future.microtask(() {
+      if (hasListeners) notifyListeners();
+    });
+  }
 
   @override
   void dispose() {
@@ -53,6 +59,7 @@ class _AuthNotifier extends ChangeNotifier {
 final appRouterProvider = Provider<GoRouter>((ref) {
   final authNotifier = _AuthNotifier(ref);
   ref.onDispose(authNotifier.dispose);
+  ref.listen<bool>(guestModeProvider, (_, __) => authNotifier.refresh());
 
   return GoRouter(
     initialLocation: '/',
@@ -124,6 +131,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
       // Create QR flow — full-screen, no shell chrome
       GoRoute(
+        path: '/map',
+        builder: (context, state) {
+          final extra = state.extra;
+          double? lat;
+          double? lng;
+          if (extra is Map) {
+            lat = (extra['lat'] as num?)?.toDouble();
+            lng = (extra['lng'] as num?)?.toDouble();
+          }
+          return MapScreen(initialLat: lat, initialLng: lng);
+        },
+      ),
+      GoRoute(
         path: '/create',
         builder: (context, state) => const CreateScreen(),
       ),
@@ -132,6 +152,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/scan',
         builder: (context, state) => const ScanScreen(),
+      ),
+      GoRoute(
+        path: '/scan/result',
+        builder: (context, state) {
+          final content = state.extra is String ? state.extra as String : '';
+          return ScanResultScreen(content: content);
+        },
       ),
 
       // Detail screen — full-screen, no shell chrome
@@ -206,21 +233,24 @@ class _MainShell extends StatelessWidget {
             // Left side: Home + Library
             Expanded(
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _NavItem(
-                    icon: Icons.home_outlined,
-                    activeIcon: Icons.home_rounded,
-                    label: 'Home',
-                    isActive: currentIndex == 0,
-                    onTap: () => context.go('/'),
+                  Expanded(
+                    child: _NavItem(
+                      icon: Icons.home_outlined,
+                      activeIcon: Icons.home_rounded,
+                      label: 'Home',
+                      isActive: currentIndex == 0,
+                      onTap: () => context.go('/'),
+                    ),
                   ),
-                  _NavItem(
-                    icon: Icons.grid_view_outlined,
-                    activeIcon: Icons.grid_view_rounded,
-                    label: 'Library',
-                    isActive: currentIndex == 1,
-                    onTap: () => context.go('/library'),
+                  Expanded(
+                    child: _NavItem(
+                      icon: Icons.grid_view_outlined,
+                      activeIcon: Icons.grid_view_rounded,
+                      label: 'Library',
+                      isActive: currentIndex == 1,
+                      onTap: () => context.go('/library'),
+                    ),
                   ),
                 ],
               ),
@@ -232,21 +262,24 @@ class _MainShell extends StatelessWidget {
             // Right side: My Cards + Settings
             Expanded(
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _NavItem(
-                    icon: Icons.bookmark_outline_rounded,
-                    activeIcon: Icons.bookmark_rounded,
-                    label: 'My Cards',
-                    isActive: currentIndex == 2,
-                    onTap: () => context.go('/mycards'),
+                  Expanded(
+                    child: _NavItem(
+                      icon: Icons.bookmark_outline_rounded,
+                      activeIcon: Icons.bookmark_rounded,
+                      label: 'My Cards',
+                      isActive: currentIndex == 2,
+                      onTap: () => context.go('/mycards'),
+                    ),
                   ),
-                  _NavItem(
-                    icon: Icons.settings_outlined,
-                    activeIcon: Icons.settings_rounded,
-                    label: 'Settings',
-                    isActive: currentIndex == 3,
-                    onTap: () => context.go('/settings'),
+                  Expanded(
+                    child: _NavItem(
+                      icon: Icons.settings_outlined,
+                      activeIcon: Icons.settings_rounded,
+                      label: 'Settings',
+                      isActive: currentIndex == 3,
+                      onTap: () => context.go('/settings'),
+                    ),
                   ),
                 ],
               ),
@@ -334,7 +367,7 @@ class _NavItem extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

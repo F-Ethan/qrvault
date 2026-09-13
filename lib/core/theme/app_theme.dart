@@ -11,6 +11,8 @@ class AppTheme {
   static const Color textPrimary = Color(0xFF111827);
   static const Color textSecondary = Color(0xFF6B7280);
   static const Color danger = Color(0xFFEF4444);
+  static const Color mapOwn = Color(0xFF16A34A);
+  static const Color mapPublic = Color(0xFFFFFFFF);
 
   static ThemeData get lightTheme => ThemeData(
         useMaterial3: true,
