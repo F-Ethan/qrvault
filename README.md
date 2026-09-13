@@ -108,14 +108,33 @@ Create a `qr_codes` table with the following columns:
 | `created_at` | `timestamptz` | Default `now()` |
 | `updated_at` | `timestamptz` | Default `now()` |
 
-Enable Row Level Security (RLS) and add a policy so users can only read and write their own rows:
+Enable Row Level Security (RLS). Owner writes and Library/My Cards must be
+**own rows only**. Public discovery is a **separate SELECT** policy — never
+OR `is_public` into the owner policy, or an unfiltered `select()` will return
+other people's codes (including their pinned cards).
+
+See `supabase/fix_qr_codes_rls.sql` for the full script to paste into the
+Supabase SQL editor (drops existing `qr_codes` policies and recreates them).
 
 ```sql
--- Users can only access their own QR codes
-create policy "Users manage own codes"
-on qr_codes for all
+-- Owner access (Library, My Cards, create/update/delete)
+create policy "Users select own codes"
+on qr_codes for select using (auth.uid() = user_id);
+
+create policy "Users insert own codes"
+on qr_codes for insert with check (auth.uid() = user_id);
+
+create policy "Users update own codes"
+on qr_codes for update
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
+
+create policy "Users delete own codes"
+on qr_codes for delete using (auth.uid() = user_id);
+
+-- Public nearby / All Public — read only
+create policy "Anyone can select public codes"
+on qr_codes for select using (is_public = true);
 ```
 
 ## Project Structure

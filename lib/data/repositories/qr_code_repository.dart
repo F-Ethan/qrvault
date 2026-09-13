@@ -65,13 +65,31 @@ class SupabaseQrCodeRepository implements QrCodeRepository {
 
   SupabaseQrCodeRepository(this._client);
 
+  String? get _uid => _client.auth.currentUser?.id;
+
+  /// Library / My Cards / home "my codes" — this user's rows only.
+  ///
+  /// Must filter by `user_id` in the query. A public-read RLS policy
+  /// (`is_public = true`) is OR'd with the owner policy, so an unfiltered
+  /// `select()` returns every public code in the table — including other
+  /// people's pinned cards.
+  PostgrestFilterBuilder<dynamic> _ownCodes() {
+    final uid = _uid;
+    if (uid == null) {
+      throw StateError('Not signed in');
+    }
+    return _client.from(_table).select().eq('user_id', uid);
+  }
+
+  List<QrCodeModel> _parseList(dynamic response) =>
+      (response as List).map((e) => QrCodeModel.fromJson(e)).toList();
+
   @override
   Future<List<QrCodeModel>> getAll() async {
-    final response = await _client
-        .from(_table)
-        .select()
-        .order('created_at', ascending: false);
-    return (response as List).map((e) => QrCodeModel.fromJson(e)).toList();
+    if (_uid == null) return [];
+    final response =
+        await _ownCodes().order('created_at', ascending: false);
+    return _parseList(response);
   }
 
   @override
@@ -87,10 +105,17 @@ class SupabaseQrCodeRepository implements QrCodeRepository {
 
   @override
   Future<QrCodeModel> save(QrCodeModel qrCode) async {
-    // Remove id and updated_at — Supabase generates these on insert
+    final uid = _uid;
+    if (uid == null) {
+      throw StateError('Not signed in');
+    }
+    // Remove id and updated_at — Supabase generates these on insert.
+    // Always stamp user_id from the session so a stale/copied model
+    // cannot insert under someone else's account.
     final payload = qrCode.toJson()
       ..remove('id')
-      ..remove('updated_at');
+      ..remove('updated_at')
+      ..['user_id'] = uid;
     final response = await _client
         .from(_table)
         .insert(payload)
@@ -101,12 +126,21 @@ class SupabaseQrCodeRepository implements QrCodeRepository {
 
   @override
   Future<QrCodeModel> update(QrCodeModel qrCode) async {
-    // Remove created_at — it should never change
-    final payload = qrCode.toJson()..remove('created_at');
+    final uid = _uid;
+    if (uid == null) {
+      throw StateError('Not signed in');
+    }
+    // Remove created_at — it should never change. Constrain to this
+    // user's row so a public SELECT policy cannot be used to mutate
+    // someone else's code (e.g. flipping is_pinned).
+    final payload = qrCode.toJson()
+      ..remove('created_at')
+      ..['user_id'] = uid;
     final response = await _client
         .from(_table)
         .update(payload)
         .eq('id', qrCode.id)
+        .eq('user_id', uid)
         .select()
         .single();
     return QrCodeModel.fromJson(response);
@@ -114,28 +148,30 @@ class SupabaseQrCodeRepository implements QrCodeRepository {
 
   @override
   Future<void> delete(String id) async {
-    await _client.from(_table).delete().eq('id', id);
+    final uid = _uid;
+    if (uid == null) {
+      throw StateError('Not signed in');
+    }
+    await _client.from(_table).delete().eq('id', id).eq('user_id', uid);
   }
 
   @override
   Future<List<QrCodeModel>> filterByType(QrCodeType type) async {
-    final response = await _client
-        .from(_table)
-        .select()
+    if (_uid == null) return [];
+    final response = await _ownCodes()
         .eq('type', type.name)
         .order('created_at', ascending: false);
-    return (response as List).map((e) => QrCodeModel.fromJson(e)).toList();
+    return _parseList(response);
   }
 
   @override
   Future<List<QrCodeModel>> filterByPlace(String placeName) async {
-    final response = await _client
-        .from(_table)
-        .select()
+    if (_uid == null) return [];
+    final response = await _ownCodes()
         .or('first_scanned_place.ilike.%$placeName%,'
             'last_scanned_place.ilike.%$placeName%')
         .order('created_at', ascending: false);
-    return (response as List).map((e) => QrCodeModel.fromJson(e)).toList();
+    return _parseList(response);
   }
 
   @override

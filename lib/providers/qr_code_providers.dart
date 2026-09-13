@@ -52,16 +52,28 @@ final codeByIdProvider =
 class QrCodesNotifier extends AsyncNotifier<List<QrCodeModel>> {
   @override
   Future<List<QrCodeModel>> build() async {
+    // Watch auth so sign-in / sign-out / account switch rebuilds this
+    // list. Without it, Riverpod keeps the previous user's codes in
+    // memory (including pinned My Cards) after a new account logs in
+    // on the same device.
+    ref.watch(authStateProvider);
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return [];
-    return ref.read(qrCodeRepositoryProvider).getAll();
+    final codes = await ref.read(qrCodeRepositoryProvider).getAll();
+    return codes.where((c) => c.userId == user.id).toList();
   }
 
   Future<void> refresh() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      state = const AsyncData([]);
+      return;
+    }
     state = const AsyncLoading();
-    state = await AsyncValue.guard(
-      () => ref.read(qrCodeRepositoryProvider).getAll(),
-    );
+    state = await AsyncValue.guard(() async {
+      final codes = await ref.read(qrCodeRepositoryProvider).getAll();
+      return codes.where((c) => c.userId == user.id).toList();
+    });
   }
 
   Future<void> add(QrCodeModel qrCode) async {
