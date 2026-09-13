@@ -71,9 +71,7 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.surface,
       appBar: AppBar(
-        backgroundColor: AppTheme.surface,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
           onPressed: () => context.pop(),
@@ -171,7 +169,10 @@ class _FormView extends StatelessWidget {
             keyboardType: TextInputType.emailAddress,
             autocorrect: false,
             textInputAction: TextInputAction.next,
-            style: const TextStyle(color: AppTheme.textPrimary, fontSize: 16),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface,
+              fontSize: 16,
+            ),
             decoration: const InputDecoration(
               labelText: 'Email',
               prefixIcon: Icon(Icons.email_outlined),
@@ -190,7 +191,10 @@ class _FormView extends StatelessWidget {
             controller: passwordController,
             obscureText: obscurePassword,
             textInputAction: TextInputAction.next,
-            style: const TextStyle(color: AppTheme.textPrimary, fontSize: 16),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface,
+              fontSize: 16,
+            ),
             decoration: InputDecoration(
               labelText: 'Password',
               prefixIcon: const Icon(Icons.lock_outline_rounded),
@@ -218,7 +222,10 @@ class _FormView extends StatelessWidget {
             obscureText: obscureConfirm,
             textInputAction: TextInputAction.done,
             onFieldSubmitted: (_) => onSignUp(),
-            style: const TextStyle(color: AppTheme.textPrimary, fontSize: 16),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface,
+              fontSize: 16,
+            ),
             decoration: InputDecoration(
               labelText: 'Confirm Password',
               prefixIcon: const Icon(Icons.lock_outline_rounded),

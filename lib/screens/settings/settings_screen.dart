@@ -17,6 +17,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _editingProfile = false;
   bool _profileSaving = false;
+  bool _deletingAccount = false;
   bool _loading = true;
 
   // Holds data freshly fetched from Supabase; falls back to local cache on error.
@@ -134,14 +135,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
     if (confirm != true || !mounted) return;
 
+    setState(() => _deletingAccount = true);
     try {
-      // Sign the user out — actual server-side deletion requires an Edge Function.
-      // The account can be cleaned up server-side via a scheduled job.
+      await Supabase.instance.client.rpc('delete_own_account');
       await Supabase.instance.client.auth.signOut();
       ref.invalidate(qrCodesProvider);
-      // GoRouter's refreshListenable handles the redirect to /sign-in.
     } catch (_) {
-      if (mounted) _showError('Could not delete account. Please try again.');
+      if (mounted) {
+        _showError(
+          'Could not delete account. Please try again or contact support.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _deletingAccount = false);
     }
   }
 
@@ -545,7 +551,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 label: 'Delete Account',
                 textColor: AppTheme.danger,
                 iconColor: AppTheme.danger,
-                onTap: _deleteAccount,
+                onTap: _deletingAccount ? () {} : _deleteAccount,
               ),
             ],
           ),

@@ -204,13 +204,15 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     // otherwise switches to Safari. Never uses an in-app browser.
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-      // Increment usage count and update last-used date in the background.
-      ref.read(qrCodesProvider.notifier).updateCode(
-            code.copyWith(
-              scanCount: code.scanCount + 1,
-              lastScannedAt: DateTime.now(),
-            ),
-          );
+      final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+      if (currentUserId != null && currentUserId == code.userId) {
+        ref.read(qrCodesProvider.notifier).updateCode(
+              code.copyWith(
+                scanCount: code.scanCount + 1,
+                lastScannedAt: DateTime.now(),
+              ),
+            );
+      }
     } else {
       _copy(code.content, label: 'URL copied (could not open browser)');
     }
@@ -742,13 +744,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           _InfoRow(
             label: 'Label',
             value: code.label,
-            trailing: _isEditing
-                ? null
-                : GestureDetector(
+            trailing: isOwner && !_isEditing
+                ? GestureDetector(
                     onTap: () => setState(() => _isEditing = true),
                     child: const Icon(Icons.edit_outlined,
                         size: 16, color: AppTheme.textSecondary),
-                  ),
+                  )
+                : null,
           ),
           _InfoRow(label: 'Type', value: typeLabels[code.type] ?? code.type.name),
           _InfoRow(
