@@ -29,11 +29,12 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
     super.dispose();
   }
 
-  // The recovery link already signed the user in, so backing out just
-  // means "skip this and continue" — not a full sign-out.
-  void _skip() {
+  // The recovery link already created a session. Backing out without a new
+  // password must sign out so the link cannot be used to stay in the account.
+  Future<void> _cancel() async {
     ref.read(passwordRecoveryProvider.notifier).set(false);
-    context.go('/');
+    await Supabase.instance.client.auth.signOut();
+    if (mounted) context.go('/sign-in');
   }
 
   Future<void> _updatePassword() async {
@@ -62,12 +63,10 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.surface,
       appBar: AppBar(
-        backgroundColor: AppTheme.surface,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
-          onPressed: _skip,
+          onPressed: _cancel,
         ),
       ),
       body: SafeArea(
@@ -92,7 +91,10 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                     controller: _passwordController,
                     obscureText: _obscurePassword,
                     textInputAction: TextInputAction.next,
-                    style: const TextStyle(color: AppTheme.textPrimary, fontSize: 16),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontSize: 16,
+                    ),
                     decoration: InputDecoration(
                       labelText: 'New Password',
                       prefixIcon: const Icon(Icons.lock_outline_rounded),
@@ -116,7 +118,10 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                     obscureText: _obscureConfirm,
                     textInputAction: TextInputAction.done,
                     onFieldSubmitted: (_) => _updatePassword(),
-                    style: const TextStyle(color: AppTheme.textPrimary, fontSize: 16),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontSize: 16,
+                    ),
                     decoration: InputDecoration(
                       labelText: 'Confirm New Password',
                       prefixIcon: const Icon(Icons.lock_outline_rounded),
@@ -169,13 +174,6 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                                 strokeWidth: 2, color: Colors.white),
                           )
                         : const Text('Update Password'),
-                  ),
-                  const SizedBox(height: 12),
-                  Center(
-                    child: TextButton(
-                      onPressed: _isLoading ? null : _skip,
-                      child: const Text('Skip for now'),
-                    ),
                   ),
                   const SizedBox(height: 48),
                 ],

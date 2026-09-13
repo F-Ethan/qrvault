@@ -54,7 +54,6 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppTheme.surface,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -90,8 +89,8 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                     keyboardType: TextInputType.emailAddress,
                     autocorrect: false,
                     textInputAction: TextInputAction.next,
-                    style: const TextStyle(
-                      color: AppTheme.textPrimary,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontSize: 16,
                     ),
                     decoration: const InputDecoration(
@@ -115,8 +114,8 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                     obscureText: _obscurePassword,
                     textInputAction: TextInputAction.done,
                     onFieldSubmitted: (_) => _signIn(),
-                    style: const TextStyle(
-                      color: AppTheme.textPrimary,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface,
                       fontSize: 16,
                     ),
                     decoration: InputDecoration(
@@ -250,7 +249,6 @@ class _Logo extends StatelessWidget {
         Text(
           'QRVault',
           style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                color: AppTheme.textPrimary,
                 fontWeight: FontWeight.w700,
                 letterSpacing: -0.5,
               ),
