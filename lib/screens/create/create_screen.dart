@@ -8,9 +8,11 @@ import 'package:uuid/uuid.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../data/models/qr_code_model.dart';
+import '../../data/qr_payload.dart';
 import '../../data/repositories/qr_code_repository.dart';
 import '../../providers/qr_code_providers.dart';
 import '../../providers/settings_providers.dart';
+import '../scan/qr_payload_editor.dart';
 
 // ---------------------------------------------------------------------------
 // Top-level helpers — accessed by both state and sub-widgets
@@ -191,6 +193,8 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
   Color _bgColor = const Color(0xFFFFFFFF);
 
   bool _isPublic = false; // reset when type changes
+  bool _hasDate = false;
+  bool _hasParts = false;
   bool _saving = false;
 
   @override
@@ -315,6 +319,11 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
         content: content,
         source: QrCodeSource.created,
         isPublic: _isPublic,
+        hasDate: _type == QrCodeType.url && _hasDate,
+        hasParts: _type == QrCodeType.url && _hasParts,
+        payloadTemplate: _type == QrCodeType.url && _hasDate
+            ? datePayloadTemplate(content)
+            : null,
         foregroundColor: _colorToHex(_fgColor),
         backgroundColor: _colorToHex(_bgColor),
         createdAt: DateTime.now(),
@@ -373,6 +382,8 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
                     _socialTemplate = null;
                     _urlCtrl.clear();
                     _isPublic = defaultIsPublic(t);
+                    _hasDate = false;
+                    _hasParts = false;
                     _step = 1;
                   });
                 },
@@ -382,6 +393,8 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
                     _socialTemplate = template;
                     _urlCtrl.clear();
                     _isPublic = defaultIsPublic(QrCodeType.url);
+                    _hasDate = false;
+                    _hasParts = false;
                     _step = 1;
                   });
                 },
@@ -627,6 +640,15 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
                 prefixIcon: Icon(Icons.link_rounded),
               ),
             ),
+          if (_socialTemplate == null) ...[
+            const SizedBox(height: 8),
+            PayloadFlagToggles(
+              hasDate: _hasDate,
+              hasParts: _hasParts,
+              onHasDate: (v) => setState(() => _hasDate = v),
+              onHasParts: (v) => setState(() => _hasParts = v),
+            ),
+          ],
         ],
 
       // ── Text ───────────────────────────────────────────────────────────────

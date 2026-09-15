@@ -105,6 +105,11 @@ Create a `qr_codes` table with the following columns:
 | `last_scanned_lat` | `float8` | Nullable |
 | `last_scanned_lng` | `float8` | Nullable |
 | `last_scanned_place` | `text` | Nullable |
+| `is_pinned` | `boolean` | Default `false` |
+| `is_public` | `boolean` | Default `false`; create flow defaults `url` / `email` to public |
+| `has_date` | `boolean` | Default `false`. Date slots open as today; user can pick another |
+| `has_parts` | `boolean` | Default `false`. Pickers for numbers and short query values |
+| `payload_template` | `text` | Date slots as `{{DATE}}` so the same code matches across days |
 | `created_at` | `timestamptz` | Default `now()` |
 | `updated_at` | `timestamptz` | Default `now()` |
 
@@ -113,8 +118,8 @@ Enable Row Level Security (RLS). Owner writes and Library/My Cards must be
 OR `is_public` into the owner policy, or an unfiltered `select()` will return
 other people's codes (including their pinned cards).
 
-See `supabase/fix_qr_codes_rls.sql` and `supabase/scan_match_notes.sql` for
-scripts to paste into the Supabase SQL editor.
+See `supabase/fix_qr_codes_rls.sql`, `supabase/scan_match_notes.sql`, and
+`supabase/payload_editor.sql` for scripts to paste into the Supabase SQL editor.
 
 ```sql
 -- Owner access (Library, My Cards, create/update/delete)

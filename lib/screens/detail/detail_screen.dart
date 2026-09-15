@@ -17,7 +17,9 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../data/models/qr_code_model.dart';
+import '../../data/qr_payload.dart';
 import '../../providers/qr_code_providers.dart';
+import '../scan/qr_payload_editor.dart';
 
 // ---------------------------------------------------------------------------
 // Colour presets (same set as create screen)
@@ -85,6 +87,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   late TextEditingController _labelCtrl;
   Color _fgColor = const Color(0xFF000000);
   Color _bgColor = const Color(0xFFFFFFFF);
+  bool _hasDate = false;
+  bool _hasParts = false;
+  String _effectiveContent = '';
 
   @override
   void initState() {
@@ -104,6 +109,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     _labelCtrl.text = code.displayLabel;
     _fgColor = _hexToColor(code.foregroundColor);
     _bgColor = _hexToColor(code.backgroundColor);
+    _hasDate = code.hasDate;
+    _hasParts = code.hasParts;
+    _effectiveContent = code.content;
     _initialized = true;
   }
 
@@ -112,6 +120,9 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       _labelCtrl.text = code.displayLabel;
       _fgColor = _hexToColor(code.foregroundColor);
       _bgColor = _hexToColor(code.backgroundColor);
+      _hasDate = code.hasDate;
+      _hasParts = code.hasParts;
+      _effectiveContent = code.content;
       _isEditing = false;
     });
   }
@@ -128,6 +139,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 label: label.isNotEmpty ? label : code.label,
                 foregroundColor: _colorToHex(_fgColor),
                 backgroundColor: _colorToHex(_bgColor),
+                hasDate: _hasDate,
+                hasParts: _hasParts,
+                payloadTemplate: _hasDate ? datePayloadTemplate(code.content) : null,
+                clearPayloadTemplate: !_hasDate,
               ),
             );
       } else {
@@ -203,7 +218,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   }
 
   Future<void> _launchUrl(QrCodeModel code) async {
-    final uri = Uri.tryParse(code.content);
+    final uri = Uri.tryParse(_effectiveContent.isNotEmpty ? _effectiveContent : code.content);
     if (uri == null) return;
 
     // externalApplication: opens the native app via Universal Links if installed,
@@ -220,7 +235,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
             );
       }
     } else {
-      _copy(code.content, label: 'URL copied (could not open browser)');
+      _copy(
+        _effectiveContent.isNotEmpty ? _effectiveContent : code.content,
+        label: 'URL copied (could not open browser)',
+      );
     }
   }
 
@@ -363,6 +381,20 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
 
                 const SizedBox(height: 24),
 
+                if ((_hasDate || _hasParts) && code.type == QrCodeType.url) ...[
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: QrPayloadEditor(
+                      content: code.content,
+                      hasDate: _hasDate,
+                      hasParts: _hasParts,
+                      onContentChanged: (v) =>
+                          setState(() => _effectiveContent = v),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                ],
+
                 // ── Clickable URL / content action ───────────────────────────
                 _buildContentAction(code),
 
@@ -468,7 +500,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(24),
             child: QrImageView(
-              data: code.content,
+              data: _effectiveContent.isNotEmpty ? _effectiveContent : code.content,
               version: QrVersions.auto,
               size: 280,
               backgroundColor: bg,
@@ -496,10 +528,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       child: switch (code.type) {
         QrCodeType.url => _ActionTile(
             icon: Icons.open_in_browser_rounded,
-            text: code.content,
+            text: _effectiveContent.isNotEmpty ? _effectiveContent : code.content,
             actionLabel: 'Open',
             onTap: () => _launchUrl(code),
-            onCopy: () => _copy(code.content, label: 'URL copied'),
+            onCopy: () => _copy(
+              _effectiveContent.isNotEmpty ? _effectiveContent : code.content,
+              label: 'URL copied',
+            ),
           ),
         QrCodeType.email => _ActionTile(
             icon: Icons.email_outlined,
@@ -752,6 +787,13 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               ),
             ),
           ],
+          if (isOwner && code.type == QrCodeType.url)
+            PayloadFlagToggles(
+              hasDate: _hasDate,
+              hasParts: _hasParts,
+              onHasDate: (v) => setState(() => _hasDate = v),
+              onHasParts: (v) => setState(() => _hasParts = v),
+            ),
         ]),
       ],
     );

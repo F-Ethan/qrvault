@@ -10,9 +10,11 @@ import 'package:uuid/uuid.dart';
 
 import '../../data/models/qr_code_model.dart';
 import '../../data/qr_content.dart';
+import '../../data/qr_payload.dart';
 import '../../data/repositories/qr_code_repository.dart';
 import '../../providers/qr_code_providers.dart';
 import '../../providers/settings_providers.dart';
+import 'qr_payload_editor.dart';
 
 class ScanResultScreen extends ConsumerStatefulWidget {
   final String content;
@@ -26,6 +28,9 @@ class ScanResultScreen extends ConsumerStatefulWidget {
 class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
   late bool _isPublic;
   late final QrCodeType _type;
+  late String _effectiveContent;
+  bool _hasDate = false;
+  bool _hasParts = false;
 
   bool _lookupDone = false;
   bool _busy = false;
@@ -43,6 +48,9 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
     super.initState();
     _type = detectQrType(widget.content);
     _isPublic = defaultIsPublic(_type);
+    _effectiveContent = widget.content;
+    final parsed = QrPayloadBlueprint.parse(widget.content);
+    _hasDate = parsed.hasDateParts;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _lookup();
       _captureLocation();
@@ -103,6 +111,10 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
       setState(() {
         _matched = existing;
         _lookupDone = true;
+        if (existing != null) {
+          _hasDate = existing.hasDate || _hasDate;
+          _hasParts = existing.hasParts;
+        }
       });
     } catch (_) {
       if (mounted) setState(() => _lookupDone = true);
@@ -129,7 +141,7 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
 
       if (_matched != null) {
         final recorded = await ref.read(qrCodesProvider.notifier).recordScan(
-              content: widget.content,
+              content: _matched!.content,
               lat: _lat,
               lng: _lng,
               place: _place,
@@ -168,6 +180,9 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
       content: widget.content,
       source: QrCodeSource.scanned,
       isPublic: _isPublic,
+      hasDate: _hasDate,
+      hasParts: _hasParts,
+      payloadTemplate: _hasDate ? datePayloadTemplate(widget.content) : null,
       scanCount: 1,
       publicScanCount: 1,
       myScanCount: 1,
@@ -191,7 +206,7 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
 
   Future<void> _launch() async {
     if (_didLaunch) return;
-    final uri = Uri.tryParse(widget.content);
+    final uri = Uri.tryParse(_effectiveContent);
     if (uri == null) return;
     if (await canLaunchUrl(uri)) {
       _didLaunch = true;
@@ -286,7 +301,7 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
                 border: Border.all(color: scheme.outlineVariant),
               ),
               child: QrImageView(
-                data: widget.content,
+                data: _effectiveContent,
                 size: 176,
               ),
             ),
@@ -299,11 +314,19 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
           ),
           const SizedBox(height: 8),
           SelectableText(
-            widget.content,
+            _effectiveContent,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 20),
+          if (_hasDate || _hasParts)
+            QrPayloadEditor(
+              content: widget.content,
+              hasDate: _hasDate,
+              hasParts: _hasParts,
+              onContentChanged: (v) => setState(() => _effectiveContent = v),
+            ),
+          if (_hasDate || _hasParts) const SizedBox(height: 20),
           InputDecorator(
             decoration: const InputDecoration(
               labelText: 'Visibility',
@@ -331,6 +354,15 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
             Text(
               'This code already exists. Visibility stays as the owner set it.',
               style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+          if (matched == null && _type == QrCodeType.url) ...[
+            const SizedBox(height: 8),
+            PayloadFlagToggles(
+              hasDate: _hasDate,
+              hasParts: _hasParts,
+              onHasDate: (v) => setState(() => _hasDate = v),
+              onHasParts: (v) => setState(() => _hasParts = v),
             ),
           ],
           const SizedBox(height: 12),
