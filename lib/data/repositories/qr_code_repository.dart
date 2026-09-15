@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/qr_code_model.dart';
+import '../qr_payload.dart';
 
 double haversineKm(double lat1, double lon1, double lat2, double lon2) {
   const r = 6371.0;
@@ -279,6 +280,36 @@ class SupabaseQrCodeRepository implements QrCodeRepository {
         .select()
         .eq('is_public', true)
         .eq('content', content)
+        .order('public_scan_count', ascending: false)
+        .limit(1);
+    final list = publicRows as List;
+    if (list.isNotEmpty) {
+      return _mergeMembership(
+        QrCodeModel.fromJson(Map<String, dynamic>.from(list.first as Map)),
+      );
+    }
+    return _findByTemplate(content, uid);
+  }
+
+  Future<QrCodeModel?> _findByTemplate(String content, String? uid) async {
+    final template = QrPayloadBlueprint.parse(content).dateTemplate();
+    if (template == content.trim()) return null;
+    if (uid != null) {
+      final own = await _client
+          .from(_table)
+          .select()
+          .eq('user_id', uid)
+          .eq('payload_template', template)
+          .maybeSingle();
+      if (own != null) {
+        return _mergeMembership(QrCodeModel.fromJson(own));
+      }
+    }
+    final publicRows = await _client
+        .from(_table)
+        .select()
+        .eq('is_public', true)
+        .eq('payload_template', template)
         .order('public_scan_count', ascending: false)
         .limit(1);
     final list = publicRows as List;

@@ -18,6 +18,9 @@ class QrCodeModel {
   final int myScanCount;
   final String? customLabel;
   final bool hasMembership;
+  final bool hasDate;
+  final bool hasParts;
+  final String? payloadTemplate;
   final DateTime? firstScannedAt;
   final DateTime? lastScannedAt;
   final double? firstScannedLat;
@@ -45,6 +48,9 @@ class QrCodeModel {
     this.myScanCount = 0,
     this.customLabel,
     this.hasMembership = false,
+    this.hasDate = false,
+    this.hasParts = false,
+    this.payloadTemplate,
     this.firstScannedAt,
     this.lastScannedAt,
     this.firstScannedLat,
@@ -121,6 +127,9 @@ class QrCodeModel {
       myScanCount: mine,
       customLabel: custom,
       hasMembership: hasMem,
+      hasDate: row['has_date'] as bool? ?? false,
+      hasParts: row['has_parts'] as bool? ?? false,
+      payloadTemplate: row['payload_template'] as String?,
       firstScannedAt: row['first_scanned_at'] != null
           ? DateTime.parse(row['first_scanned_at'] as String)
           : null,
@@ -163,6 +172,9 @@ class QrCodeModel {
         'background_color': backgroundColor,
         'is_pinned': isPinned,
         'is_public': isPublic,
+        'has_date': hasDate,
+        'has_parts': hasParts,
+        'payload_template': payloadTemplate,
         'scan_count': scanCount,
         'public_scan_count': publicScanCount,
         'first_scanned_at': firstScannedAt?.toIso8601String(),
@@ -194,6 +206,10 @@ class QrCodeModel {
     String? customLabel,
     bool clearCustomLabel = false,
     bool? hasMembership,
+    bool? hasDate,
+    bool? hasParts,
+    String? payloadTemplate,
+    bool clearPayloadTemplate = false,
     DateTime? firstScannedAt,
     DateTime? lastScannedAt,
     double? firstScannedLat,
@@ -221,6 +237,11 @@ class QrCodeModel {
         myScanCount: myScanCount ?? this.myScanCount,
         customLabel: clearCustomLabel ? null : (customLabel ?? this.customLabel),
         hasMembership: hasMembership ?? this.hasMembership,
+        hasDate: hasDate ?? this.hasDate,
+        hasParts: hasParts ?? this.hasParts,
+        payloadTemplate: clearPayloadTemplate
+            ? null
+            : (payloadTemplate ?? this.payloadTemplate),
         firstScannedAt: firstScannedAt ?? this.firstScannedAt,
         lastScannedAt: lastScannedAt ?? this.lastScannedAt,
         firstScannedLat: firstScannedLat ?? this.firstScannedLat,
