@@ -31,6 +31,7 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
   late String _effectiveContent;
   bool _hasDate = false;
   bool _hasParts = false;
+  List<PayloadPartConfig> _payloadParts = const [];
 
   bool _lookupDone = false;
   bool _busy = false;
@@ -51,6 +52,11 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
     _effectiveContent = widget.content;
     final parsed = QrPayloadBlueprint.parse(widget.content);
     _hasDate = parsed.hasDateParts;
+    _payloadParts = suggestedPayloadConfigs(
+      widget.content,
+      hasDate: parsed.hasDateParts,
+      hasParts: false,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _lookup();
       _captureLocation();
@@ -114,6 +120,9 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
         if (existing != null) {
           _hasDate = existing.hasDate || _hasDate;
           _hasParts = existing.hasParts;
+          if (existing.payloadParts.isNotEmpty) {
+            _payloadParts = existing.payloadParts;
+          }
         }
       });
     } catch (_) {
@@ -182,7 +191,10 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
       isPublic: _isPublic,
       hasDate: _hasDate,
       hasParts: _hasParts,
-      payloadTemplate: _hasDate ? datePayloadTemplate(widget.content) : null,
+      payloadTemplate: _hasDate
+          ? datePayloadTemplate(widget.content, _payloadParts)
+          : null,
+      payloadParts: _payloadParts,
       scanCount: 1,
       publicScanCount: 1,
       myScanCount: 1,
@@ -324,6 +336,7 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
               content: widget.content,
               hasDate: _hasDate,
               hasParts: _hasParts,
+              configs: _payloadParts,
               onContentChanged: (v) => setState(() => _effectiveContent = v),
             ),
           if (_hasDate || _hasParts) const SizedBox(height: 20),
@@ -361,8 +374,39 @@ class _ScanResultScreenState extends ConsumerState<ScanResultScreen> {
             PayloadFlagToggles(
               hasDate: _hasDate,
               hasParts: _hasParts,
-              onHasDate: (v) => setState(() => _hasDate = v),
-              onHasParts: (v) => setState(() => _hasParts = v),
+              onHasDate: (v) => setState(() {
+                _hasDate = v;
+                _payloadParts = v
+                    ? addSuggestedPayloadConfigs(
+                        widget.content,
+                        _payloadParts,
+                        dates: true,
+                        parts: false,
+                      )
+                    : _payloadParts
+                        .where((c) => c.kind != PayloadPartKind.date)
+                        .toList();
+              }),
+              onHasParts: (v) => setState(() {
+                _hasParts = v;
+                _payloadParts = v
+                    ? addSuggestedPayloadConfigs(
+                        widget.content,
+                        _payloadParts,
+                        dates: false,
+                        parts: true,
+                      )
+                    : _payloadParts
+                        .where((c) => c.kind == PayloadPartKind.date)
+                        .toList();
+              }),
+            ),
+            PayloadSegmentPicker(
+              content: widget.content,
+              hasDate: _hasDate,
+              hasParts: _hasParts,
+              configs: _payloadParts,
+              onChanged: (next) => setState(() => _payloadParts = next),
             ),
           ],
           const SizedBox(height: 12),

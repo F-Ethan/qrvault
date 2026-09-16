@@ -110,6 +110,7 @@ Create a `qr_codes` table with the following columns:
 | `has_date` | `boolean` | Default `false`. Date slots open as today; user can pick another |
 | `has_parts` | `boolean` | Default `false`. Pickers for numbers and short query values |
 | `payload_template` | `text` | Date slots as `{{DATE}}` so the same code matches across days |
+| `payload_parts` | `jsonb` | Chosen URL sections (`date` / `number` / `text`) and date patterns |
 | `created_at` | `timestamptz` | Default `now()` |
 | `updated_at` | `timestamptz` | Default `now()` |
 

@@ -1,3 +1,5 @@
+import '../qr_payload.dart';
+
 enum QrCodeType { url, text, wifi, contact, email }
 
 enum QrCodeSource { scanned, created }
@@ -21,6 +23,7 @@ class QrCodeModel {
   final bool hasDate;
   final bool hasParts;
   final String? payloadTemplate;
+  final List<PayloadPartConfig> payloadParts;
   final DateTime? firstScannedAt;
   final DateTime? lastScannedAt;
   final double? firstScannedLat;
@@ -51,6 +54,7 @@ class QrCodeModel {
     this.hasDate = false,
     this.hasParts = false,
     this.payloadTemplate,
+    this.payloadParts = const [],
     this.firstScannedAt,
     this.lastScannedAt,
     this.firstScannedLat,
@@ -130,6 +134,7 @@ class QrCodeModel {
       hasDate: row['has_date'] as bool? ?? false,
       hasParts: row['has_parts'] as bool? ?? false,
       payloadTemplate: row['payload_template'] as String?,
+      payloadParts: decodePayloadParts(row['payload_parts']),
       firstScannedAt: row['first_scanned_at'] != null
           ? DateTime.parse(row['first_scanned_at'] as String)
           : null,
@@ -175,6 +180,7 @@ class QrCodeModel {
         'has_date': hasDate,
         'has_parts': hasParts,
         'payload_template': payloadTemplate,
+        'payload_parts': payloadParts.map((e) => e.toJson()).toList(),
         'scan_count': scanCount,
         'public_scan_count': publicScanCount,
         'first_scanned_at': firstScannedAt?.toIso8601String(),
@@ -210,6 +216,7 @@ class QrCodeModel {
     bool? hasParts,
     String? payloadTemplate,
     bool clearPayloadTemplate = false,
+    List<PayloadPartConfig>? payloadParts,
     DateTime? firstScannedAt,
     DateTime? lastScannedAt,
     double? firstScannedLat,
@@ -242,6 +249,7 @@ class QrCodeModel {
         payloadTemplate: clearPayloadTemplate
             ? null
             : (payloadTemplate ?? this.payloadTemplate),
+        payloadParts: payloadParts ?? this.payloadParts,
         firstScannedAt: firstScannedAt ?? this.firstScannedAt,
         lastScannedAt: lastScannedAt ?? this.lastScannedAt,
         firstScannedLat: firstScannedLat ?? this.firstScannedLat,

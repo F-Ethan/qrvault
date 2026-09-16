@@ -10,6 +10,9 @@ alter table public.qr_codes
 alter table public.qr_codes
   add column if not exists payload_template text;
 
+alter table public.qr_codes
+  add column if not exists payload_parts jsonb not null default '[]'::jsonb;
+
 create index if not exists qr_codes_payload_template_idx
   on public.qr_codes (payload_template)
   where payload_template is not null;

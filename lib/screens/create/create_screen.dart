@@ -195,6 +195,7 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
   bool _isPublic = false; // reset when type changes
   bool _hasDate = false;
   bool _hasParts = false;
+  List<PayloadPartConfig> _payloadParts = const [];
   bool _saving = false;
 
   @override
@@ -218,7 +219,7 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
           final raw = _urlCtrl.text.trim();
           if (raw.isEmpty) return '';
           if (_socialTemplate != null) return _socialTemplate!.buildUrl(raw);
-          return raw.startsWith('http') ? raw : 'https://$raw';
+          return normalizeHttpUrl(raw);
         }(),
       QrCodeType.text => _textCtrl.text.trim(),
       QrCodeType.wifi =>
@@ -322,8 +323,9 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
         hasDate: _type == QrCodeType.url && _hasDate,
         hasParts: _type == QrCodeType.url && _hasParts,
         payloadTemplate: _type == QrCodeType.url && _hasDate
-            ? datePayloadTemplate(content)
+            ? datePayloadTemplate(content, _payloadParts)
             : null,
+        payloadParts: _type == QrCodeType.url ? _payloadParts : const [],
         foregroundColor: _colorToHex(_fgColor),
         backgroundColor: _colorToHex(_bgColor),
         createdAt: DateTime.now(),
@@ -384,6 +386,7 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
                     _isPublic = defaultIsPublic(t);
                     _hasDate = false;
                     _hasParts = false;
+                    _payloadParts = const [];
                     _step = 1;
                   });
                 },
@@ -395,6 +398,7 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
                     _isPublic = defaultIsPublic(QrCodeType.url);
                     _hasDate = false;
                     _hasParts = false;
+                    _payloadParts = const [];
                     _step = 1;
                   });
                 },
@@ -645,8 +649,39 @@ class _CreateScreenState extends ConsumerState<CreateScreen> {
             PayloadFlagToggles(
               hasDate: _hasDate,
               hasParts: _hasParts,
-              onHasDate: (v) => setState(() => _hasDate = v),
-              onHasParts: (v) => setState(() => _hasParts = v),
+              onHasDate: (v) => setState(() {
+                _hasDate = v;
+                _payloadParts = v
+                    ? addSuggestedPayloadConfigs(
+                        _buildContent(),
+                        _payloadParts,
+                        dates: true,
+                        parts: false,
+                      )
+                    : _payloadParts
+                        .where((c) => c.kind != PayloadPartKind.date)
+                        .toList();
+              }),
+              onHasParts: (v) => setState(() {
+                _hasParts = v;
+                _payloadParts = v
+                    ? addSuggestedPayloadConfigs(
+                        _buildContent(),
+                        _payloadParts,
+                        dates: false,
+                        parts: true,
+                      )
+                    : _payloadParts
+                        .where((c) => c.kind == PayloadPartKind.date)
+                        .toList();
+              }),
+            ),
+            PayloadSegmentPicker(
+              content: _buildContent(),
+              hasDate: _hasDate,
+              hasParts: _hasParts,
+              configs: _payloadParts,
+              onChanged: (next) => setState(() => _payloadParts = next),
             ),
           ],
         ],

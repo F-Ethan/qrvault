@@ -1,10 +1,12 @@
 import 'models/qr_code_model.dart';
+import 'qr_payload.dart';
 
 QrCodeType detectQrType(String content) {
   if (content.startsWith('WIFI:')) return QrCodeType.wifi;
   if (content.startsWith('BEGIN:VCARD')) return QrCodeType.contact;
   if (content.startsWith('mailto:')) return QrCodeType.email;
-  if (content.startsWith('http://') || content.startsWith('https://')) {
+  final asUrl = normalizeHttpUrl(content);
+  if (asUrl.startsWith('http://') || asUrl.startsWith('https://')) {
     return QrCodeType.url;
   }
   return QrCodeType.text;
@@ -19,7 +21,8 @@ bool isLaunchableQr(QrCodeType type) =>
 String autoQrLabel(String content, QrCodeType type) {
   return switch (type) {
     QrCodeType.url =>
-      Uri.tryParse(content)?.host.replaceAll('www.', '') ?? content,
+      Uri.tryParse(normalizeHttpUrl(content))?.host.replaceAll('www.', '') ??
+          content,
     QrCodeType.wifi =>
       RegExp(r'S:([^;]+)').firstMatch(content)?.group(1) ?? 'WiFi',
     QrCodeType.contact =>
