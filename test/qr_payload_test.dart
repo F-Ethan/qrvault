@@ -37,4 +37,54 @@ void main() {
       isTrue,
     );
   });
+
+  test('detects US short dates in the path', () {
+    const raw = 'https://www.campmarshal.com/10-20-24/more-info-here';
+    final parsed = QrPayloadBlueprint.parse(raw);
+    expect(parsed.hasDateParts, isTrue);
+    final date = parsed.parts.singleWhere((p) => p.kind == PayloadPartKind.date);
+    expect(date.original, '10-20-24');
+    expect(date.datePattern, 'MM-dd-yy');
+    final assembled = parsed.assemble(
+      parsed.defaultValues(useTodayForDates: true),
+    );
+    expect(assembled.contains('10-20-24'), isFalse);
+    expect(assembled.contains('more-info-here'), isTrue);
+  });
+
+  test('detects ISO dates even when the scheme is mistyped', () {
+    const raw =
+        'https//:www.campmarshal.com/2024-10-24/this_is_the_way';
+    expect(normalizeHttpUrl(raw).startsWith('https://'), isTrue);
+    final parsed = QrPayloadBlueprint.parse(raw);
+    expect(parsed.hasDateParts, isTrue);
+    expect(
+      parsed.parts.any((p) => p.original == '2024-10-24'),
+      isTrue,
+    );
+  });
+
+  test('lets a path slug be chosen as text', () {
+    const raw =
+        'https://www.campmarshal.com/2024-10-24/this_is_the_way';
+    final parsed = QrPayloadBlueprint.parse(raw);
+    expect(
+      parsed.slots.any((s) => s.original == 'this_is_the_way'),
+      isTrue,
+    );
+    final slug = parsed.slots.firstWhere((s) => s.original == 'this_is_the_way');
+    final configs = upsertPayloadSlot(
+      suggestedPayloadConfigs(raw, hasDate: true, hasParts: false),
+      slug,
+      PayloadPartKind.text,
+    );
+    final parts = parsed.partsFromConfigs(configs);
+    expect(parts.any((p) => p.original == 'this_is_the_way'), isTrue);
+    final assembled = parsed.assembleWith(parts, {
+      for (final p in parts)
+        p.id: p.kind == PayloadPartKind.text ? 'new-slug' : p.original,
+    });
+    expect(assembled.contains('new-slug'), isTrue);
+    expect(assembled.contains('2024-10-24'), isTrue);
+  });
 }

@@ -42,10 +42,153 @@ class PayloadFlagToggles extends StatelessWidget {
   }
 }
 
+class PayloadSegmentPicker extends StatelessWidget {
+  final String content;
+  final bool hasDate;
+  final bool hasParts;
+  final List<PayloadPartConfig> configs;
+  final ValueChanged<List<PayloadPartConfig>> onChanged;
+
+  const PayloadSegmentPicker({
+    super.key,
+    required this.content,
+    required this.hasDate,
+    required this.hasParts,
+    required this.configs,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!hasDate && !hasParts) return const SizedBox.shrink();
+    final blueprint = QrPayloadBlueprint.parse(content);
+    if (!blueprint.isHttpUrl || blueprint.slots.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Text(
+          'No URL sections to edit. Use a full https:// link.',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+      );
+    }
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        Text(
+          'Editable sections',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Choose which pieces of the URL can change.',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 8),
+        ...blueprint.slots.map((slot) {
+          final selected = configs.where((c) => c.id == slot.id).firstOrNull;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InputDecorator(
+                  decoration: InputDecoration(
+                    labelText: slot.title,
+                    helperText: slot.original,
+                    helperMaxLines: 2,
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      value: selected?.kind.name ?? 'off',
+                      items: [
+                        const DropdownMenuItem(
+                          value: 'off',
+                          child: Text('Off'),
+                        ),
+                        if (hasDate)
+                          const DropdownMenuItem(
+                            value: 'date',
+                            child: Text('Date'),
+                          ),
+                        if (hasParts) ...[
+                          const DropdownMenuItem(
+                            value: 'number',
+                            child: Text('Number'),
+                          ),
+                          const DropdownMenuItem(
+                            value: 'text',
+                            child: Text('Text'),
+                          ),
+                        ],
+                      ],
+                      onChanged: (value) {
+                        final kind = switch (value) {
+                          'date' => PayloadPartKind.date,
+                          'number' => PayloadPartKind.number,
+                          'text' => PayloadPartKind.text,
+                          _ => null,
+                        };
+                        onChanged(upsertPayloadSlot(configs, slot, kind));
+                      },
+                    ),
+                  ),
+                ),
+                if (selected?.kind == PayloadPartKind.date) ...[
+                  const SizedBox(height: 8),
+                  InputDecorator(
+                    decoration: const InputDecoration(labelText: 'Date format'),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        isExpanded: true,
+                        value: payloadDatePatterns.contains(selected!.datePattern)
+                            ? selected.datePattern
+                            : 'yyyy-MM-dd',
+                        items: [
+                          for (final pattern in payloadDatePatterns)
+                            DropdownMenuItem(
+                              value: pattern,
+                              child: Text(pattern),
+                            ),
+                        ],
+                        onChanged: (pattern) {
+                          if (pattern == null) return;
+                          onChanged(
+                            upsertPayloadSlot(
+                              configs,
+                              slot,
+                              PayloadPartKind.date,
+                              datePattern: pattern,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        }),
+        Text(
+          'Host and sign-in tokens stay locked.',
+          style: Theme.of(context)
+              .textTheme
+              .bodySmall
+              ?.copyWith(color: scheme.onSurfaceVariant),
+        ),
+      ],
+    );
+  }
+}
+
 class QrPayloadEditor extends StatefulWidget {
   final String content;
   final bool hasDate;
   final bool hasParts;
+  final List<PayloadPartConfig> configs;
   final ValueChanged<String> onContentChanged;
 
   const QrPayloadEditor({
@@ -53,6 +196,7 @@ class QrPayloadEditor extends StatefulWidget {
     required this.content,
     required this.hasDate,
     required this.hasParts,
+    this.configs = const [],
     required this.onContentChanged,
   });
 
@@ -74,22 +218,39 @@ class _QrPayloadEditorState extends State<QrPayloadEditor> {
   void didUpdateWidget(QrPayloadEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.hasDate != widget.hasDate ||
-        oldWidget.hasParts != widget.hasParts) {
+        oldWidget.hasParts != widget.hasParts ||
+        oldWidget.configs != widget.configs) {
       _rebuild(notify: true);
     }
   }
 
   void _rebuild({required bool notify}) {
     _blueprint = QrPayloadBlueprint.parse(widget.content);
-    _values = _blueprint.defaultValues(useTodayForDates: widget.hasDate);
+    _values = {
+      for (final part in _visibleParts)
+        part.id: widget.hasDate &&
+                part.kind == PayloadPartKind.date &&
+                part.datePattern != null
+            ? DateFormat(part.datePattern).format(DateTime.now())
+            : part.original,
+    };
     if (notify) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) widget.onContentChanged(_blueprint.assemble(_values));
+        if (mounted) {
+          widget.onContentChanged(
+            _blueprint.assembleWith(_visibleParts, _values),
+          );
+        }
       });
     }
   }
 
   List<PayloadPart> get _visibleParts {
+    final configs = widget.configs.where((c) {
+      if (c.kind == PayloadPartKind.date) return widget.hasDate;
+      return widget.hasParts;
+    }).toList();
+    if (configs.isNotEmpty) return _blueprint.partsFromConfigs(configs);
     if (widget.hasParts) return _blueprint.parts;
     if (widget.hasDate) {
       return _blueprint.parts
@@ -101,7 +262,7 @@ class _QrPayloadEditorState extends State<QrPayloadEditor> {
 
   void _setValue(String id, String value) {
     setState(() => _values[id] = value);
-    widget.onContentChanged(_blueprint.assemble(_values));
+    widget.onContentChanged(_blueprint.assembleWith(_visibleParts, _values));
   }
 
   Future<void> _pickDate(PayloadPart part) async {

@@ -89,6 +89,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
   Color _bgColor = const Color(0xFFFFFFFF);
   bool _hasDate = false;
   bool _hasParts = false;
+  List<PayloadPartConfig> _payloadParts = const [];
   String _effectiveContent = '';
 
   @override
@@ -111,6 +112,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
     _bgColor = _hexToColor(code.backgroundColor);
     _hasDate = code.hasDate;
     _hasParts = code.hasParts;
+    _payloadParts = List<PayloadPartConfig>.from(code.payloadParts);
     _effectiveContent = code.content;
     _initialized = true;
   }
@@ -122,6 +124,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
       _bgColor = _hexToColor(code.backgroundColor);
       _hasDate = code.hasDate;
       _hasParts = code.hasParts;
+      _payloadParts = List<PayloadPartConfig>.from(code.payloadParts);
       _effectiveContent = code.content;
       _isEditing = false;
     });
@@ -141,8 +144,10 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                 backgroundColor: _colorToHex(_bgColor),
                 hasDate: _hasDate,
                 hasParts: _hasParts,
-                payloadTemplate: _hasDate ? datePayloadTemplate(code.content) : null,
+                payloadTemplate:
+                    _hasDate ? datePayloadTemplate(code.content, _payloadParts) : null,
                 clearPayloadTemplate: !_hasDate,
+                payloadParts: _payloadParts,
               ),
             );
       } else {
@@ -388,6 +393,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       content: code.content,
                       hasDate: _hasDate,
                       hasParts: _hasParts,
+                      configs: _payloadParts,
                       onContentChanged: (v) =>
                           setState(() => _effectiveContent = v),
                     ),
@@ -787,13 +793,45 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
               ),
             ),
           ],
-          if (isOwner && code.type == QrCodeType.url)
+          if (isOwner && code.type == QrCodeType.url) ...[
             PayloadFlagToggles(
               hasDate: _hasDate,
               hasParts: _hasParts,
-              onHasDate: (v) => setState(() => _hasDate = v),
-              onHasParts: (v) => setState(() => _hasParts = v),
+              onHasDate: (v) => setState(() {
+                _hasDate = v;
+                _payloadParts = v
+                    ? addSuggestedPayloadConfigs(
+                        code.content,
+                        _payloadParts,
+                        dates: true,
+                        parts: false,
+                      )
+                    : _payloadParts
+                        .where((c) => c.kind != PayloadPartKind.date)
+                        .toList();
+              }),
+              onHasParts: (v) => setState(() {
+                _hasParts = v;
+                _payloadParts = v
+                    ? addSuggestedPayloadConfigs(
+                        code.content,
+                        _payloadParts,
+                        dates: false,
+                        parts: true,
+                      )
+                    : _payloadParts
+                        .where((c) => c.kind == PayloadPartKind.date)
+                        .toList();
+              }),
             ),
+            PayloadSegmentPicker(
+              content: code.content,
+              hasDate: _hasDate,
+              hasParts: _hasParts,
+              configs: _payloadParts,
+              onChanged: (next) => setState(() => _payloadParts = next),
+            ),
+          ],
         ]),
       ],
     );
