@@ -1,6 +1,6 @@
 # QRVault progress
 
-Shipped app: Flutter + Supabase, version `1.4.0+6` on `main` (`1.5.0+7` pending). This file tracks leftovers so agents do not drop them.
+Shipped app: Flutter + Supabase, version `1.5.0+7` on `main`. This file tracks leftovers so agents do not drop them.
 
 ## Known gaps
 
@@ -14,5 +14,5 @@ Document out-of-scope bugs, doc drift, and follow-ups here. Add a row when you n
 - **Tests are a stub.** `test/widget_test.dart` is a placeholder. No repository, router, or widget coverage for auth, scan, or public/nearby.
 - **Guest mode is memory-only.** `guestModeProvider` resets on launch. Guests cannot persist a library; save flows must keep prompting for an account rather than inventing a local store of fixture codes.
 - **Android package still `com.example.qrvault`.** iOS is the maintained store target (Xcode Cloud `ios/ci_scripts/ci_post_clone.sh`). Android identity has not been productized.
-- **Flutter iOS still on CocoaPods.** Recent Flutter Xcode Cloud runs warn that plugins are Swift Packages and the Podfile is “non-standard.” Do not `pod deintegrate` until we migrate `ios/` to SPM on purpose; Cloud still needs `pod install` in `ci_post_clone.sh`. The UIScene lifecycle note is Flutter’s own migration notice, not an archive failure.
+- **Flutter iOS still on CocoaPods.** Do not `pod deintegrate` until we migrate `ios/` to SPM on purpose. Plugin deprecation warnings (`mobile_scanner`, `share_plus`, `geolocator_apple`) are upstream and do not fail the archive. Xcode Cloud must install Flutter via git (`ci_post_clone.sh`), not Homebrew, so `xcode_backend.sh` exists for the archive Run Script.
 - **`origin/dev` is stale.** It is behind `main`. Do not branch from it or push to it; integrate through PRs to `main`.
