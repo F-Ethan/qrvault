@@ -24,4 +24,14 @@ class AppConstants {
   // QR Code defaults
   static const String defaultForegroundColor = '#000000';
   static const String defaultBackgroundColor = '#FFFFFF';
+
+  // Google sample AdMob IDs (safe to commit). Replace with real iOS
+  // app / interstitial units before shipping production ads.
+  static const String admobIosAppId =
+      'ca-app-pub-3940256099942544~1458002511';
+  static const String admobInterstitialUnitId =
+      'ca-app-pub-3940256099942544/4411468910';
+
+  /// Non-consumable StoreKit product. Create the same ID in App Store Connect.
+  static const String removeAdsProductId = 'dev.gamelogic.qrvault.remove_ads';
 }

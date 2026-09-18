@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_theme.dart';
+import '../../providers/ads_providers.dart';
 import '../../providers/qr_code_providers.dart';
 import '../../providers/settings_providers.dart';
 
@@ -312,6 +313,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ],
             ),
 
+            const SizedBox(height: 24),
+            const _RemoveAdsSection(),
+
             const SizedBox(height: 40),
           ],
         ),
@@ -504,6 +508,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
 
           const SizedBox(height: 24),
+          const _RemoveAdsSection(),
+
+          const SizedBox(height: 24),
 
           // ── Account section ───────────────────────────────────────────────
           _SectionHeader('Account'),
@@ -617,6 +624,101 @@ class _SectionHeader extends StatelessWidget {
           color: AppTheme.textSecondary,
         ),
       ),
+    );
+  }
+}
+
+class _RemoveAdsSection extends ConsumerWidget {
+  const _RemoveAdsSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ads = ref.watch(removeAdsProvider);
+    final price = ads.priceLabel;
+    final buyLabel = price == null ? 'Remove Ads' : 'Remove Ads · $price';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionHeader('Ads'),
+        _SettingsCard(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        ads.purchased
+                            ? Icons.verified_outlined
+                            : Icons.campaign_outlined,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          ads.purchased ? 'Ads removed' : 'Full-screen ads',
+                          style: Theme.of(context).textTheme.bodyLarge,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    ads.purchased
+                        ? 'This Apple ID has the no-ads version. Restore on a new device if ads come back.'
+                        : 'Occasional ads after you leave Scan, Create, a card, or the map. Pay once to remove them.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  if (!ads.purchased) ...[
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: ads.busy
+                            ? null
+                            : () => ref.read(removeAdsProvider.notifier).buy(),
+                        child: ads.busy
+                            ? SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color:
+                                      Theme.of(context).colorScheme.onPrimary,
+                                ),
+                              )
+                            : Text(buyLabel),
+                      ),
+                    ),
+                    Center(
+                      child: TextButton(
+                        onPressed: ads.busy
+                            ? null
+                            : () =>
+                                ref.read(removeAdsProvider.notifier).restore(),
+                        child: const Text('Restore Purchase'),
+                      ),
+                    ),
+                  ],
+                  if (ads.message != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      ads.message!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

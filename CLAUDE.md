@@ -23,7 +23,9 @@ These rules are non-negotiable.
 | Navigation | `go_router` with a `ShellRoute` for the tab bar |
 | QR generate / scan | `qr_flutter` / `mobile_scanner` |
 | Location | `geolocator` + `geocoding` |
-| Local prefs | `shared_preferences` (theme, onboarding, nearby radius) |
+| Local prefs | `shared_preferences` (theme, onboarding, nearby radius, Remove Ads purchase cache) |
+| Ads | `google_mobile_ads` — interstitials after full-screen flows; UMP consent |
+| IAP | `in_app_purchase` — non-consumable Remove Ads (`dev.gamelogic.qrvault.remove_ads`) |
 | Share / files | `share_plus`, `path_provider` |
 | Lint | `flutter_lints` via `analysis_options.yaml` |
 
@@ -35,6 +37,7 @@ Platform folders (`ios/`, `android/`, `macos/`, `web/`, `windows/`, `linux/`) ar
 lib/
 ├── main.dart                 # Supabase.initialize, onboarding pref, ProviderScope
 ├── core/
+│   ├── ads/                  # interstitial gate + AdMob service
 │   ├── constants/            # AppConstants + gitignored AppSecrets
 │   ├── router/app_router.dart
 │   └── theme/app_theme.dart
@@ -60,7 +63,7 @@ Routes that matter:
 
 - Auth / first run: `/onboarding`, `/sign-in`, `/sign-up`, `/forgot-password`, `/reset-password`
 - Shell tabs: `/` (Home), `/library`, `/mycards`, `/settings`
-- Full-screen (no tab chrome): `/create`, `/scan`, `/detail/:id`
+- Full-screen (no tab chrome): `/create`, `/scan`, `/scan/result`, `/detail/:id`, `/map`
 
 Deep link for Auth redirects: `qrvault://auth-callback` (`AppConstants.authRedirectUrl`). Keep it registered in Supabase Auth URL config and in iOS URL schemes.
 
@@ -74,7 +77,7 @@ Guest mode (`guestModeProvider`) is in-memory only. Guests can browse; saving a 
 - **User’s library:** `qrCodesProvider` → `getAll()` (RLS limits rows to `auth.uid() = user_id`). Empty list when signed out — do not invent demo codes.
 - **Public / nearby:** `getPublicNearby` / `getAllPublic` and the matching providers. Nearby filtering is currently Haversine in Dart after a Supabase select (see **Known gaps**). Do not replace this with a canned nearby list.
 - **Defaults:** `defaultIsPublic` makes `url` / `email` public and other types private. Changing a sensitive type (`wifi`, `contact`, `text`) to public must keep the existing warning copy.
-- **Local-only prefs** (theme, `has_seen_onboarding`, nearby radius miles) stay in `shared_preferences`. QR payloads, scan history, pin/public flags, and profile metadata (`full_name`, `phone`) belong in Supabase.
+- **Local-only prefs** (theme, `has_seen_onboarding`, nearby radius miles, `remove_ads_purchased`) stay in `shared_preferences`. QR payloads, scan history, pin/public flags, and profile metadata (`full_name`, `phone`) belong in Supabase.
 
 There is no in-repo SQL migration folder. Schema and RLS live in the Supabase project. If you add a column or policy, update `QrCodeModel`, the repository, `README.md` schema notes, and record any applied-vs-documented mismatch under **Known gaps**.
 

@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/constants/app_constants.dart';
 import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
+import 'providers/ads_providers.dart';
 import 'providers/onboarding_provider.dart';
 import 'providers/settings_providers.dart';
 
@@ -20,6 +21,9 @@ Future<void> main() async {
   // Read onboarding flag before runApp so GoRouter redirect has it on first frame
   final prefs = await SharedPreferences.getInstance();
   setInitialOnboardingState(prefs.getBool('has_seen_onboarding') ?? false);
+  setInitialRemoveAdsPurchased(
+    prefs.getBool(kRemoveAdsPurchasedPrefKey) ?? false,
+  );
 
   runApp(
     const ProviderScope(

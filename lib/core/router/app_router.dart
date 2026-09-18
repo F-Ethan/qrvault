@@ -20,6 +20,8 @@ import '../../screens/settings/settings_screen.dart';
 import '../../screens/detail/detail_screen.dart';
 import '../../screens/mycards/my_cards_screen.dart';
 import '../../screens/onboarding/onboarding_screen.dart';
+import '../../core/ads/ads_observer.dart';
+import '../../providers/ads_providers.dart';
 import '../../providers/onboarding_provider.dart';
 import '../../providers/settings_providers.dart';
 import '../../providers/auth_providers.dart';
@@ -61,8 +63,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   ref.onDispose(authNotifier.dispose);
   ref.listen<bool>(guestModeProvider, (_, __) => authNotifier.refresh());
 
+  final ads = ref.watch(adsServiceProvider);
+
   return GoRouter(
     initialLocation: '/',
+    observers: [AdsRouteObserver(ads)],
     refreshListenable: authNotifier,
     redirect: (context, state) {
       final session = Supabase.instance.client.auth.currentSession;
@@ -108,30 +113,36 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // Onboarding — shown once to new users before auth
       GoRoute(
         path: '/onboarding',
+        name: 'onboarding',
         builder: (context, state) => const OnboardingScreen(),
       ),
 
       // Auth
       GoRoute(
         path: '/sign-in',
+        name: 'sign-in',
         builder: (context, state) => const SignInScreen(),
       ),
       GoRoute(
         path: '/sign-up',
+        name: 'sign-up',
         builder: (context, state) => const SignUpScreen(),
       ),
       GoRoute(
         path: '/forgot-password',
+        name: 'forgot-password',
         builder: (context, state) => const ForgotPasswordScreen(),
       ),
       GoRoute(
         path: '/reset-password',
+        name: 'reset-password',
         builder: (context, state) => const ResetPasswordScreen(),
       ),
 
       // Create QR flow — full-screen, no shell chrome
       GoRoute(
         path: '/map',
+        name: 'map',
         builder: (context, state) {
           final extra = state.extra;
           double? lat;
@@ -145,16 +156,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/create',
+        name: 'create',
         builder: (context, state) => const CreateScreen(),
       ),
 
       // Scan QR flow — full-screen camera, no shell chrome
       GoRoute(
         path: '/scan',
+        name: 'scan',
         builder: (context, state) => const ScanScreen(),
       ),
       GoRoute(
         path: '/scan/result',
+        name: 'scan-result',
         builder: (context, state) {
           final content = state.extra is String ? state.extra as String : '';
           return ScanResultScreen(content: content);
@@ -164,6 +178,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // Detail screen — full-screen, no shell chrome
       GoRoute(
         path: '/detail/:id',
+        name: 'detail',
         builder: (context, state) => DetailScreen(
           id: state.pathParameters['id']!,
         ),
@@ -175,18 +190,22 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         routes: [
           GoRoute(
             path: '/',
+            name: 'home',
             builder: (context, state) => const HomeScreen(),
           ),
           GoRoute(
             path: '/library',
+            name: 'library',
             builder: (context, state) => const LibraryScreen(),
           ),
           GoRoute(
             path: '/mycards',
+            name: 'mycards',
             builder: (context, state) => const MyCardsScreen(),
           ),
           GoRoute(
             path: '/settings',
+            name: 'settings',
             builder: (context, state) => const SettingsScreen(),
           ),
         ],
