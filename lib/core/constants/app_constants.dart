@@ -24,4 +24,13 @@ class AppConstants {
   // QR Code defaults
   static const String defaultForegroundColor = '#000000';
   static const String defaultBackgroundColor = '#FFFFFF';
+
+  // iOS AdMob (App Store 6759879006).
+  static const String admobIosAppId =
+      'ca-app-pub-7671007992790429~9351448191';
+  static const String admobInterstitialUnitId =
+      'ca-app-pub-7671007992790429/4384784287';
+
+  /// Non-consumable StoreKit product. Create the same ID in App Store Connect.
+  static const String removeAdsProductId = 'dev.gamelogic.qrvault.remove_ads';
 }

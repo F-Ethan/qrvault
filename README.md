@@ -12,6 +12,7 @@ A Flutter app for scanning, creating, and managing QR codes. All codes are store
 - **FIDO passkey detection** — Passkey QR codes (`FIDO:` URIs) are recognised at scan time and in the detail view, with a prompt to use the native iPhone Camera app.
 - **Dark mode** — Full light/dark theme support, respects the system setting with a manual override in Settings.
 - **Authentication** — Email/password sign-up and sign-in via Supabase Auth, with a one-time onboarding carousel for new users.
+- **Ads** — Occasional full-screen ads after leaving Scan, Create, a card, or the map. Settings has a one-time **Remove Ads** In-App Purchase and Restore Purchase. Camera stays ad-free.
 
 ## Tech Stack
 
@@ -25,6 +26,8 @@ A Flutter app for scanning, creating, and managing QR codes. All codes are store
 | Location | [geolocator](https://pub.dev/packages/geolocator) + [geocoding](https://pub.dev/packages/geocoding) |
 | Link handling | [url_launcher](https://pub.dev/packages/url_launcher) |
 | Persistence | [shared_preferences](https://pub.dev/packages/shared_preferences) |
+| Ads | [google_mobile_ads](https://pub.dev/packages/google_mobile_ads) |
+| In-app purchase | [in_app_purchase](https://pub.dev/packages/in_app_purchase) |
 
 ## Getting Started
 
