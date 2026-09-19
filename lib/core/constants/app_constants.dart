@@ -25,10 +25,10 @@ class AppConstants {
   static const String defaultForegroundColor = '#000000';
   static const String defaultBackgroundColor = '#FFFFFF';
 
-  // Google sample AdMob IDs (safe to commit). Replace with real iOS
-  // app / interstitial units before shipping production ads.
+  // iOS AdMob app (App Store 6759879006). Interstitial unit is still
+  // Google's sample until a real unit is created in AdMob.
   static const String admobIosAppId =
-      'ca-app-pub-3940256099942544~1458002511';
+      'ca-app-pub-7671007992790429~9351448191';
   static const String admobInterstitialUnitId =
       'ca-app-pub-3940256099942544/4411468910';
 
