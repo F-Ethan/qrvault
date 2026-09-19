@@ -7,6 +7,7 @@ import '../../core/constants/app_constants.dart';
 import '../../core/location/map_privacy.dart';
 import '../../core/theme/app_theme.dart';
 import '../../data/models/qr_code_model.dart';
+import 'map_pin_sheet.dart';
 
 class NearbyCodesMap extends StatefulWidget {
   final List<QrCodeModel> codes;
@@ -98,78 +99,87 @@ class _NearbyCodesMapState extends State<NearbyCodesMap> {
   }
 
   List<Marker> _buildPins(BuildContext context) {
-    final points = <({QrCodeModel code, LatLng point})>[];
+    final points = <(QrCodeModel, LatLng)>[];
     for (final code in widget.codes) {
       final lat = code.mapLat;
       final lng = code.mapLng;
       if (lat == null || lng == null) continue;
-      points.add((code: code, point: publicMapPoint(lat, lng)));
+      points.add((code, publicMapPoint(lat, lng)));
     }
 
     if (!widget.clusterPins) {
-      return [for (final item in points) _dotMarker(item)];
+      return [
+        for (final item in points) _dotMarker(context, [item.$1], item.$2),
+      ];
     }
 
     var visible = points;
     if (_mapReady && _zoom >= 14) {
       final bounds = _mapController.camera.visibleBounds;
-      visible = points.where((item) => bounds.contains(item.point)).toList();
-      if (visible.length > 120) visible = visible.take(120).toList();
+      visible = points.where((item) => bounds.contains(item.$2)).toList();
     }
 
-    final cell = clusterCellDegrees(_zoom);
-    if (cell <= 0) {
-      return [for (final item in visible) _dotMarker(item)];
+    var clusters = clusterMapPins(visible, zoom: _zoom);
+    if (clusters.length > 120) {
+      clusters = clusters.take(120).toList();
     }
 
-    final groups = <String, List<({QrCodeModel code, LatLng point})>>{};
-    for (final item in visible) {
-      final key =
-          '${(item.point.latitude / cell).round()}_${(item.point.longitude / cell).round()}';
-      groups.putIfAbsent(key, () => []).add(item);
-    }
-
-    return groups.values.map((group) {
-      final first = group.first;
-      if (group.length == 1) return _dotMarker(first);
-      final lat = group.fold<double>(0, (s, e) => s + e.point.latitude) /
-          group.length;
-      final lng = group.fold<double>(0, (s, e) => s + e.point.longitude) /
-          group.length;
-      final center = LatLng(lat, lng);
-      final allMine = widget.ownerUserId != null &&
-          group.every((e) => e.code.userId == widget.ownerUserId);
-      return Marker(
-        point: center,
-        width: 40,
-        height: 40,
-        child: GestureDetector(
-          onTap: () {
-            if (!_mapReady) return;
-            final next = (_zoom + 2).clamp(_minZoom, _maxZoom);
-            _mapController.move(center, next);
-          },
-          child: _ClusterBubble(
-            count: group.length,
-            color: allMine ? AppTheme.mapOwn : AppTheme.mapPublic,
-          ),
-        ),
-      );
-    }).toList();
+    return [
+      for (final cluster in clusters) _markerForCluster(context, cluster),
+    ];
   }
 
-  Marker _dotMarker(({QrCodeModel code, LatLng point}) item) {
-    final mine =
-        widget.ownerUserId != null && item.code.userId == widget.ownerUserId;
+  Marker _markerForCluster(
+    BuildContext context,
+    MapPinCluster<QrCodeModel> cluster,
+  ) {
+    final codes = cluster.items;
+    final allMine = widget.ownerUserId != null &&
+        codes.every((code) => code.userId == widget.ownerUserId);
+    final color = allMine ? AppTheme.mapOwn : AppTheme.mapPublic;
+
+    if (codes.length == 1 || cluster.samePublicPoint) {
+      return _dotMarker(context, codes, cluster.point, color: color);
+    }
+
     return Marker(
-      point: item.point,
-      width: 18,
-      height: 18,
+      point: cluster.point,
+      width: 40,
+      height: 40,
       child: GestureDetector(
-        onTap: () => context.push('/detail/${item.code.id}'),
-        child: _CodeDot(
-          color: mine ? AppTheme.mapOwn : AppTheme.mapPublic,
-        ),
+        onTap: () {
+          if (!_mapReady) return;
+          final next = (_zoom + 2).clamp(_minZoom, _maxZoom);
+          _mapController.move(cluster.point, next);
+        },
+        child: _ClusterBubble(count: codes.length, color: color),
+      ),
+    );
+  }
+
+  Marker _dotMarker(
+    BuildContext context,
+    List<QrCodeModel> codes,
+    LatLng point, {
+    Color? color,
+  }) {
+    final resolved = color ??
+        (widget.ownerUserId != null &&
+                codes.every((code) => code.userId == widget.ownerUserId)
+            ? AppTheme.mapOwn
+            : AppTheme.mapPublic);
+    final stacked = codes.length > 1;
+    return Marker(
+      point: point,
+      width: stacked ? 40 : 18,
+      height: stacked ? 40 : 18,
+      child: GestureDetector(
+        onTap: widget.interactive
+            ? () => showMapPinSheet(context: context, codes: codes)
+            : null,
+        child: stacked
+            ? _ClusterBubble(count: codes.length, color: resolved)
+            : _CodeDot(color: resolved),
       ),
     );
   }
