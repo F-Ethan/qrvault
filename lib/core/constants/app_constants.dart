@@ -25,12 +25,11 @@ class AppConstants {
   static const String defaultForegroundColor = '#000000';
   static const String defaultBackgroundColor = '#FFFFFF';
 
-  // iOS AdMob app (App Store 6759879006). Interstitial unit is still
-  // Google's sample until a real unit is created in AdMob.
+  // iOS AdMob (App Store 6759879006).
   static const String admobIosAppId =
       'ca-app-pub-7671007992790429~9351448191';
   static const String admobInterstitialUnitId =
-      'ca-app-pub-3940256099942544/4411468910';
+      'ca-app-pub-7671007992790429/4384784287';
 
   /// Non-consumable StoreKit product. Create the same ID in App Store Connect.
   static const String removeAdsProductId = 'dev.gamelogic.qrvault.remove_ads';
